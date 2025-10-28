@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // kDebugMode
 
+// ✅ 新增：LoginPage 路徑（你剛剛要求的 lib/login/login_page.dart）
+import 'login/login_page.dart';
+
+// 既有頁面
 import 'page/onboarding_page.dart';
 import 'page/home_page.dart';
 import 'page/community_page.dart';
@@ -31,41 +35,51 @@ class MyApp extends StatelessWidget {
       ),
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
-      // Onboarding -> 完成後導入主殼 (_RootShell)
-      home: OnboardingPage(
-        onComplete: (profile) async {
+
+      // ✅ 改成先進 Login，再導到 Onboarding → RootShell
+      home: LoginPage(
+        onLogin: () {
           final nav = navigatorKey.currentState;
-          if (nav == null || !nav.mounted) return;
+          if (nav == null) return;
 
-          // 顯示 Loading 避免連點 & 提供回饋
-          showDialog(
-            context: nav.context,
-            barrierDismissible: false,
-            builder: (_) => const Center(child: CircularProgressIndicator()),
+          nav.pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => OnboardingPage(
+                onComplete: (profile) async {
+                  // ---- 以下沿用你原本 Onboarding 完成後的流程 ----
+                  final n = navigatorKey.currentState;
+                  if (n == null /*|| !n.mounted*/) return;
+
+                  // 顯示 Loading
+                  showDialog(
+                    context: n.context,
+                    barrierDismissible: false,
+                    builder: (_) => const Center(child: CircularProgressIndicator()),
+                  );
+
+                  try {
+                    final saved = await ApiClient.I.saveProfile(profile.toJson());
+                    if (kDebugMode) {
+                      debugPrint('後端已接收：$saved');
+                    }
+                  } catch (e) {
+                    ScaffoldMessenger.of(n.context).showSnackBar(
+                      SnackBar(content: Text('無法連線後端：$e')),
+                    );
+                  } finally {
+                    // 關閉 Loading
+                    Navigator.of(n.context).pop();
+                  }
+
+                  // 進入主殼，並清空返回堆疊
+                  n.pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (_) => const _RootShell()),
+                    (route) => false,
+                  );
+                },
+              ),
+            ),
           );
-
-          try {
-            final saved = await ApiClient.I.saveProfile(profile.toJson());
-            if (kDebugMode) {
-              debugPrint('後端已接收：$saved');
-            }
-          } catch (e) {
-            if (nav.mounted) {
-              ScaffoldMessenger.of(nav.context).showSnackBar(
-                SnackBar(content: Text('無法連線後端：$e')),
-              );
-            }
-          } finally {
-            if (nav.mounted) Navigator.of(nav.context).pop(); // 關閉 Loading
-          }
-
-          if (nav.mounted) {
-            // 清空返回堆疊，避免返回回到 Onboarding
-            nav.pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const _RootShell()),
-              (route) => false,
-            );
-          }
         },
       ),
     );
