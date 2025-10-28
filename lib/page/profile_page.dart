@@ -120,7 +120,10 @@ class ProfilePage extends StatelessWidget {
                   icon: Icons.settings_outlined,
                   title: '個人設定',
                   description: '編輯個人資料、風格偏好',
-                  onTap: () {},
+                    onTap: () {
+                    debugPrint('[ProfilePage] tap settings'); // 可留著看log
+                    onNavigate('settings');
+                    },
                 ),
                 const SizedBox(height: 12),
                 _MenuCard(

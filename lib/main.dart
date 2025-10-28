@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // kDebugMode
 
-// ✅ 新增：LoginPage 路徑（你剛剛要求的 lib/login/login_page.dart）
+// ✅ 共用資料模型：務必存在 lib/models/user_profile.dart，且全專案只保留這一份
+import 'models/user_profile.dart';
+
+// ✅ LoginPage
 import 'login/login_page.dart';
 
 // 既有頁面
-import 'page/onboarding_page.dart';
+import 'page/onboarding_page.dart' ;
 import 'page/home_page.dart';
 import 'page/community_page.dart';
 import 'page/wardrobe_page.dart';
@@ -13,6 +16,7 @@ import 'page/ai_page.dart';
 import 'page/profile_page.dart';
 import 'page/profilepage/capsule_page.dart';
 import 'page/profilepage/shop_page.dart';
+import 'page/profilepage/settings_page.dart';
 
 import 'api/api_client.dart';
 
@@ -36,7 +40,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
 
-      // ✅ 改成先進 Login，再導到 Onboarding → RootShell
+      // 先進 Login，再導到 Onboarding → RootShell
       home: LoginPage(
         onLogin: () {
           final nav = navigatorKey.currentState;
@@ -46,9 +50,8 @@ class MyApp extends StatelessWidget {
             MaterialPageRoute(
               builder: (_) => OnboardingPage(
                 onComplete: (profile) async {
-                  // ---- 以下沿用你原本 Onboarding 完成後的流程 ----
                   final n = navigatorKey.currentState;
-                  if (n == null /*|| !n.mounted*/) return;
+                  if (n == null) return;
 
                   // 顯示 Loading
                   showDialog(
@@ -88,7 +91,7 @@ class MyApp extends StatelessWidget {
 
 /// App 殼：底部導覽（Home / Community / Wardrobe / AI / Profile）
 class _RootShell extends StatefulWidget {
-  const _RootShell();
+  const _RootShell({super.key});
 
   @override
   State<_RootShell> createState() => _RootShellState();
@@ -97,6 +100,27 @@ class _RootShell extends StatefulWidget {
 class _RootShellState extends State<_RootShell> {
   int _index = 0;
   final PageStorageBucket _bucket = PageStorageBucket();
+
+  // 本地暫存的使用者設定（示例）
+  late UserProfile _userProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    // 先給預設/示例資料；若你已有後端資料，可在這裡替換為 API 取回的內容。
+    _userProfile = UserProfile(
+      height: 175,
+      weight: 70,
+      shoulderWidth: 45,
+      waistline: 80,
+      fitPreference: 'regular', // 'slim' | 'regular' | 'oversized'
+      colorBlacklist: const [],
+      hasMotorcycle: false,
+      commuteMethod: 'public', // 'public' | 'car' | 'walk'
+      styleWeights: const {'street': 34, 'outdoor': 33, 'office': 33},
+      gender: 'male', // 'male' | 'female' | 'other'
+    );
+  }
 
   void _notifyDev(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -115,6 +139,41 @@ class _RootShellState extends State<_RootShell> {
   void _openShop() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ShopPage()),
+    );
+  }
+
+  // 開啟設定頁（SettingsPage）
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SettingsPage(
+          userProfile: _userProfile,
+          onUpdateProfile: (updated) {
+            setState(() => _userProfile = updated);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('個人設定已儲存')),
+            );
+            // TODO: 若需同步到後端，可在此呼叫 ApiClient.I.saveProfile(updated.toJson())
+          },
+          onLogout: () {
+            // 回到 Login（並清空堆疊）
+            navigatorKey.currentState?.pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (_) => LoginPage(
+                  onLogin: () {
+                    navigatorKey.currentState?.pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const _RootShell()),
+                      (route) => false,
+                    );
+                  },
+                ),
+              ),
+              (route) => false,
+            );
+          },
+          onBack: () => Navigator.of(context).pop(),
+        ),
+      ),
     );
   }
 
@@ -139,6 +198,9 @@ class _RootShellState extends State<_RootShell> {
               break;
             case 'shop':
               _openShop();
+              break;
+            case 'settings': // 從個人中心前往「設定」
+              _openSettings();
               break;
             default:
               _notifyDev('尚未實作：$page');

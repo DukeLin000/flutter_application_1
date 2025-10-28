@@ -4,10 +4,12 @@
 // • 無第三方套件依賴（僅使用 Material）
 // • 支援「登入 / 註冊」模式切換、顯示/隱藏密碼、條款勾選、記住我
 // • 含「一鍵填入測試帳號」、三個社群登入按鈕（示意）、RWD 卡片佈局
-// • onLogin 回呼在成功後觸發（模擬 API 呼叫）
+// • 在登入當下進行後端 preflight（無 Token）→ 登入拿 Token → boot ApiClient → ping 確認
+// • onLogin 回呼在成功後觸發
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../api/api_client.dart';
 
 enum _AuthMode { login, register }
 
@@ -29,6 +31,11 @@ class _LoginPageState extends State<LoginPage> {
   bool _agreeTerms = false;
   bool _isLoading = false;
   bool _rememberMe = false;
+
+  // 後端檢查訊息（顯示於畫面）
+  String _backendMsg = '';
+  // 預設用 ApiClient 內的 baseUrl（10.0.2.2/localhost）；若有正式機可改掉
+  final String _baseUrl = ApiClient.I.baseUrl;
 
   @override
   void dispose() {
@@ -75,26 +82,117 @@ class _LoginPageState extends State<LoginPage> {
       }
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _backendMsg = '檢查後端連線…';
+    });
 
-    // 模擬 API 呼叫
-    await Future<void>.delayed(const Duration(milliseconds: 900));
+    // 1) 後端 preflight（不需 token）
+    final pre = await ApiClient.I.preflight(_baseUrl);
+    if (!pre.ok) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _backendMsg = '後端不可用：${pre.detail}';
+      });
+      _snack('後端不可用：${pre.detail}', color: Colors.red);
+      return;
+    }
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
+    // 2) 模擬 Email 登入拿 token（此處示範；換成你實際 Auth API）
+    try {
+      setState(() => _backendMsg = '後端正常，登入中…');
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      final token = 'DEMO_TOKEN_${_emailCtrl.text.trim()}';
 
-    _snack(_mode == _AuthMode.login ? '登入成功！' : '註冊成功！歡迎加入 WEAR');
-    widget.onLogin();
+      // 3) 啟用 ApiClient（帶 baseUrl + token）
+      await ApiClient.I.boot(baseUrl: _baseUrl, token: token);
+
+      // 4) （可選）登入後再 ping 一次
+      setState(() => _backendMsg = '驗證連線狀態…');
+      final ok2 = await ApiClient.I.ping();
+      if (!ok2) {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          _backendMsg = '登入後健康檢查失敗';
+        });
+        _snack('登入後健康檢查失敗', color: Colors.red);
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _backendMsg = '';
+      });
+      _snack(_mode == _AuthMode.login ? '登入成功！' : '註冊成功！歡迎加入 WEAR');
+      widget.onLogin(); // 進到 Onboarding → RootShell
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _backendMsg = '登入失敗：$e';
+      });
+      _snack('登入失敗：$e', color: Colors.red);
+    }
   }
 
   Future<void> _handleSocialLogin(String provider) async {
-    setState(() => _isLoading = true);
-    _snack('正在透過 $provider 登入...');
-    await Future<void>.delayed(const Duration(milliseconds: 900));
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    _snack('登入成功！');
-    widget.onLogin();
+    setState(() {
+      _isLoading = true;
+      _backendMsg = '檢查後端連線…';
+    });
+
+    // 1) 後端 preflight
+    final pre = await ApiClient.I.preflight(_baseUrl);
+    if (!pre.ok) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _backendMsg = '後端不可用：${pre.detail}';
+      });
+      _snack('後端不可用：${pre.detail}', color: Colors.red);
+      return;
+    }
+
+    try {
+      // 2) 向第三方登入拿 token（示範）
+      setState(() => _backendMsg = '透過 $provider 登入中…');
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      final token = 'SOCIAL_${provider.toUpperCase()}_TOKEN';
+
+      // 3) 啟用 ApiClient
+      await ApiClient.I.boot(baseUrl: _baseUrl, token: token);
+
+      // 4) 可選：再 ping
+      setState(() => _backendMsg = '驗證連線狀態…');
+      final ok2 = await ApiClient.I.ping();
+      if (!ok2) {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          _backendMsg = '登入後健康檢查失敗';
+        });
+        _snack('登入後健康檢查失敗', color: Colors.red);
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _backendMsg = '';
+      });
+      _snack('登入成功！');
+      widget.onLogin();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _backendMsg = '登入失敗：$e';
+      });
+      _snack('登入失敗：$e', color: Colors.red);
+    }
   }
 
   @override
@@ -180,6 +278,15 @@ class _LoginPageState extends State<LoginPage> {
                           onRememberChanged: (v) => setState(() => _rememberMe = v ?? false),
                           onSubmit: _isLoading ? null : _handleEmailAuth,
                         ),
+
+                        const SizedBox(height: 8),
+                        if (_backendMsg.isNotEmpty)
+                          Center(
+                            child: Text(
+                              _backendMsg,
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ),
 
                         const SizedBox(height: 12),
 
