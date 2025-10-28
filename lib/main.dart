@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // kDebugMode
+// ✅ LoginPage
+import 'theme/app_theme.dart';
 
 // ✅ 共用資料模型：務必存在 lib/models/user_profile.dart，且全專案只保留這一份
 import 'models/user_profile.dart';
@@ -33,10 +35,13 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Flutter Demo',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
+      // theme: ThemeData(
+      //   colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+      //   useMaterial3: true,
+      // ),
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.system, // 或 ThemeMode.dark / light,
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
 
