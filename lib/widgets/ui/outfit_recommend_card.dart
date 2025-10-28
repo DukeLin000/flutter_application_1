@@ -261,7 +261,7 @@ class _ImageWithFallback extends StatelessWidget {
         return Image.memory(bytes, fit: BoxFit.contain, errorBuilder: (_, __, ___) => placeholder);
       } catch (_) {
         return placeholder;
-      }
+      } 
     }
 
     return Image.network(
