@@ -346,14 +346,18 @@ class _LogoHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        // === Logo 方塊：灰→黑漸層、圓角、陰影、置中白色「S」 ===
         Container(
           width: 80,
           height: 80,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFF2563EB), Color(0xFF4F46E5)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF9CA3AF), // gray-400
+                Color(0xFF111827), // gray-900 / near-black
+              ],
             ),
             borderRadius: BorderRadius.circular(22),
             boxShadow: const [
@@ -361,12 +365,23 @@ class _LogoHeader extends StatelessWidget {
             ],
           ),
           alignment: Alignment.center,
-          child: const Text('W', style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w700)),
+          child: const Text(
+            'S',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 36,
+              fontWeight: FontWeight.w700,
+              letterSpacing: .5,
+            ),
+          ),
         ),
         const SizedBox(height: 12),
-        Text('WEAR', style: titleStyle),
+        Text('StylistOS 神穿', style: titleStyle),
         const SizedBox(height: 6),
-        Text(desc, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[700])),
+        Text(
+          desc,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[700]),
+        ),
       ],
     );
   }
@@ -383,7 +398,9 @@ class _TipCard extends StatelessWidget {
       elevation: 0,
       clipBehavior: Clip.antiAlias,
       color: const Color(0xFFFFF8E1), // 近似 amber-50
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFFDE68A))),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Color(0xFFFDE68A))),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(
@@ -392,7 +409,8 @@ class _TipCard extends StatelessWidget {
             Container(
               width: 32,
               height: 32,
-              decoration: const BoxDecoration(color: Color(0xFFF59E0B), shape: BoxShape.circle),
+              decoration: const BoxDecoration(
+                  color: Color(0xFFF59E0B), shape: BoxShape.circle),
               alignment: Alignment.center,
               child: const Text('💡', style: TextStyle(fontSize: 16)),
             ),
@@ -401,12 +419,22 @@ class _TipCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('快速測試', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF78350F))),
+                  const Text('快速測試',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF78350F))),
                   const SizedBox(height: 2),
-                  const Text('使用測試帳號快速體驗 WEAR 所有功能', style: TextStyle(fontSize: 12, color: Color(0xFF92400E))),
+                  const Text('使用測試帳號快速體驗 WEAR 所有功能',
+                      style:
+                          TextStyle(fontSize: 12, color: Color(0xFF92400E))),
                   const SizedBox(height: 8),
-                  const Text('帳號：demo@wear.com', style: TextStyle(fontSize: 12, color: Color(0xFF78350F))),
-                  const Text('密碼：demo123', style: TextStyle(fontSize: 12, color: Color(0xFF78350F))),
+                  const Text('帳號：demo@wear.com',
+                      style:
+                          TextStyle(fontSize: 12, color: Color(0xFF78350F))),
+                  const Text('密碼：demo123',
+                      style:
+                          TextStyle(fontSize: 12, color: Color(0xFF78350F))),
                   const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
@@ -473,7 +501,8 @@ class _Separator extends StatelessWidget {
         const Expanded(child: Divider()),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Text(text, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+          child: Text(text,
+              style: TextStyle(color: Colors.grey[600], fontSize: 13)),
         ),
         const Expanded(child: Divider()),
       ],
@@ -573,7 +602,10 @@ class _EmailForm extends StatelessWidget {
               Expanded(
                 child: Text.rich(
                   TextSpan(
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Colors.grey[700]),
                     children: const [
                       TextSpan(text: '我同意 '),
                       TextSpan(text: '服務條款', style: TextStyle(color: Colors.blue)),

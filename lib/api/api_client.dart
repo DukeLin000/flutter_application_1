@@ -15,8 +15,8 @@ class ApiClient {
   static String get _defaultBaseUrl {
     const fromEnv = String.fromEnvironment('API_BASE_URL');
     if (fromEnv.isNotEmpty) return fromEnv;
-    if (kIsWeb) return 'http://localhost:8080';
-    return 'http://10.0.2.2:8080';
+    if (kIsWeb) return 'http://localhost:8088'; // ← Web 預設 8088
+    return 'http://10.0.2.2:8088';              // ← Android 模擬器連本機 8088
   }
 
   static const String _apiBasePath = '/api';
@@ -111,9 +111,14 @@ class ApiClient {
   }
 
   // ---------- Preflight / Health ----------
-  /// 登入頁用的「無 Token 健康檢查」：依序嘗試 /api/health → /actuator/health → /health
+  /// 登入前健康檢查：優先打 /api/profile/ping；再回退 /api/health → /actuator/health → /health
   Future<PreflightResult> preflight(String baseUrl) async {
-    final candidates = <String>['$_apiBasePath/health', '/actuator/health', '/health'];
+    final candidates = <String>[
+      '$_apiBasePath/profile', // ← 對應 ProfileController#ping
+      '$_apiBasePath/health',
+      '/actuator/health',
+      '/health',
+    ];
     String lastDetail = 'no-response';
     for (final p in candidates) {
       try {
@@ -134,7 +139,8 @@ class ApiClient {
 
   /// App 內健康檢查（用目前 instance baseUrl／Token）
   Future<bool> ping() async {
-    final req = http.Request('GET', _uri('$_apiBasePath/health'))..headers.addAll(_headersAll());
+    final req = http.Request('GET', _uri('$_apiBasePath/profile/ping')) // ← 改這裡
+      ..headers.addAll(_headersAll());
     try {
       final resp = await _send(req);
       return resp.statusCode >= 200 && resp.statusCode < 300;
@@ -148,6 +154,14 @@ class ApiClient {
     final req = http.Request('POST', _uri('$_apiBasePath/profile'))
       ..headers.addAll(_headersAll())
       ..body = jsonEncode(profile);
+    final resp = await _send(req);
+    return _decodeMap(resp);
+  }
+
+  /// 依照 ID 回讀（支援 "P-1" 或 "1"）
+  Future<Map<String, dynamic>> getProfile(String id) async {
+    final req = http.Request('GET', _uri('$_apiBasePath/profile/$id'))
+      ..headers.addAll(_headersAll());
     final resp = await _send(req);
     return _decodeMap(resp);
   }

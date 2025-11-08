@@ -111,9 +111,9 @@ class ProfilePage extends StatelessWidget {
                 const SizedBox(height: 12),
                 _MenuCard(
                   icon: Icons.notifications_outlined,
-                  title: '通知設定',
+                  title: '通知中心',
                   description: '每日穿搭、降雨提醒',
-                  onTap: () {},
+                  onTap: () => onNavigate('notifications'),
                 ),
                 const SizedBox(height: 12),
                 _MenuCard(

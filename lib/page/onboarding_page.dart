@@ -1,191 +1,208 @@
 // lib/page/onboarding_page.dart
 import 'package:flutter/material.dart';
-
-// ✅ 改用共用模型（相對於本檔案位於 lib/page/）
 import '../models/user_profile.dart';
 
-/// OnboardingPage (Flutter, fully responsive for Web, iOS, Android)
-/// ------------------------------------------------------------------
+/// 顏色偏好層級（內部狀態使用；儲存時只把 never 丟進 colorBlacklist）
+enum ColorPreferenceLevel { like, neutral, avoid, never }
+
+/// 風格選項
+class StyleOption {
+  final String id;
+  final String label;
+  final bool isCustom;
+  const StyleOption({required this.id, required this.label, this.isCustom = false});
+}
+
 class OnboardingPage extends StatefulWidget {
-  final ValueChanged<UserProfile> onComplete;
   const OnboardingPage({super.key, required this.onComplete});
+  final void Function(UserProfile) onComplete;
 
   @override
   State<OnboardingPage> createState() => _OnboardingPageState();
 }
 
-/// ---------------------------- 風格選項與工具 ----------------------------
-class StyleOption {
-  final String id; // e.g. 'street'
-  final String label; // e.g. '街頭'
-  final bool isCustom;
-  const StyleOption({required this.id, required this.label, this.isCustom = false});
-}
-
-const List<StyleOption> kDefaultStyleOptions = <StyleOption>[
-  StyleOption(id: 'street', label: '街頭'),
-  StyleOption(id: 'outdoor', label: '戶外機能'),
-  StyleOption(id: 'office', label: '上班族'),
-  StyleOption(id: 'minimal', label: '極簡'),
-  StyleOption(id: 'workwear', label: '工裝'),
-  StyleOption(id: 'japanese', label: '日系'),
-  StyleOption(id: 'korean', label: '韓系'),
-  StyleOption(id: 'american', label: '美式'),
-  StyleOption(id: 'sports', label: '運動'),
-  StyleOption(id: 'casual', label: '休閒'),
-  StyleOption(id: 'vintage', label: '復古'),
-  StyleOption(id: 'dandy', label: '雅痞'),
-  StyleOption(id: 'preppy', label: '學院'),
-  StyleOption(id: 'biker', label: '機車/騎士'),
-  StyleOption(id: 'military', label: '軍裝'),
-  StyleOption(id: 'commute_business', label: '通勤商務'),
-];
-
-String generateCustomStyleId(String name) {
-  final slug = name.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9\u4e00-\u9fa5]+'), '-');
-  return 'custom-$slug';
-}
-
-String? validateCustomStyleName(String name, List<StyleOption> all) {
-  final trimmed = name.trim();
-  if (trimmed.isEmpty) return '請輸入風格名稱';
-  if (trimmed.length > 20) return '最多 20 個字元';
-  final exists = all.any((s) => s.label == trimmed || s.id == generateCustomStyleId(trimmed));
-  if (exists) return '此風格已存在';
-  return null;
-}
-
-Map<String, int> _even100(List<String> ids) {
-  if (ids.isEmpty) return {};
-  final base = 100 ~/ ids.length;
-  int rest = 100 - base * ids.length;
-  final m = <String, int>{};
-  for (final id in ids) {
-    m[id] = base + (rest > 0 ? 1 : 0);
-    if (rest > 0) rest--;
-  }
-  return m;
-}
-
-List<String> _selectedFromWeights(Map<String, int> w) =>
-    w.entries.where((e) => e.value > 0).map((e) => e.key).toList();
-
-/// ---------------------------- 主頁面 ----------------------------
 class _OnboardingPageState extends State<OnboardingPage> {
-  int step = 1;
+  // -------------------- Step 控制 --------------------
+  int _step = 1;
 
-  // 預設風格
-  final List<String> defaultStyleIds = const ['street', 'outdoor', 'office'];
+  // -------------------- 基本資料 --------------------
+  String _gender = 'male';
+  int _height = 175;
+  int _weight = 70;
+  int _shoulder = 45;
+  int _waist = 80;
 
-  // Profile 狀態
-  late UserProfile profile;
+  String _fitPreference = 'regular';        // slim | regular | loose
+  String _commuteMethod = 'public';         // walk | bike | motorcycle | car | public
+  bool _hasMotorcycle = false;              // 保留欄位對齊你的模型
 
-  // 風格狀態
-  late List<StyleOption> customStyles; // 使用者自訂
-  late List<String> selectedStyleIds;
-
-  // 對話框暫存
-  late List<String> tempSelectedStyles;
-  final TextEditingController newStyleCtrl = TextEditingController();
-
-  // 顏色黑名單色票
-  final List<_ColorSwatch> availableColors = const [
-    _ColorSwatch(id: 'pink', label: '粉紅', color: Colors.pinkAccent),
-    _ColorSwatch(id: 'purple', label: '紫色', color: Colors.purpleAccent),
-    _ColorSwatch(id: 'yellow', label: '黃色', color: Colors.amberAccent),
-    _ColorSwatch(id: 'orange', label: '橘色', color: Colors.orangeAccent),
-    _ColorSwatch(id: 'green', label: '綠色', color: Colors.lightGreen),
-    _ColorSwatch(id: 'red', label: '紅色', color: Colors.redAccent),
+  // -------------------- 風格 --------------------
+  final List<StyleOption> _defaultStyles = const [
+    StyleOption(id: 'street', label: '街頭'),
+    StyleOption(id: 'outdoor', label: '戶外'),
+    StyleOption(id: 'office', label: '上班'),
+    StyleOption(id: 'sporty', label: '運動'),
+    StyleOption(id: 'minimal', label: '極簡'),
+    StyleOption(id: 'vintage', label: '復古'),
   ];
+  final List<String> _defaultSelected = const ['street', 'outdoor', 'office'];
+  final List<StyleOption> _customStyles = [];
+  late List<String> _selectedStyleIds = [..._defaultSelected];
+
+  // styleWeights（0~100，總和=100）
+  Map<String, int> _styleWeights = {};
+
+  // Dialog 用暫存
+  bool _isStyleDialogOpen = false;
+  final TextEditingController _newStyleCtrl = TextEditingController();
+  late List<String> _tempSelectedStyleIds = [..._selectedStyleIds];
+
+  // -------------------- 顏色偏好 --------------------
+  bool _showNever = false; // 「絕不建議」開關
+  final Map<String, ColorPreferenceLevel> _colorPrefs = {};
+
+  // 色票（id / label / color）
+  final List<(String id, String label, Color color)> _basicColors = const [
+    ('black', '黑色', Colors.black),
+    ('white', '白色', Colors.white),
+  ];
+  final List<(String id, String label, Color color)> _moreColors = const [
+    ('pink',   '粉紅',  Color(0xFFF472B6)),
+    ('purple', '紫色',  Color(0xFFA78BFA)),
+    ('yellow', '黃色',  Color(0xFFFACC15)),
+    ('orange', '橘色',  Color(0xFFF59E0B)),
+    ('green',  '綠色',  Color(0xFF34D399)),
+    ('red',    '紅色',  Color(0xFFEF4444)),
+    ('gray',   '灰色',  Color(0xFF9CA3AF)),
+    ('brown',  '棕色',  Color(0xFF92400E)),
+    ('navy',   '深藍',  Color(0xFF1E3A8A)),
+    ('beige',  '米色',  Color(0xFFF5F5DC)),
+  ];
+  bool _expandMoreColors = false;
 
   @override
   void initState() {
     super.initState();
-    customStyles = <StyleOption>[];
-    selectedStyleIds = List<String>.from(defaultStyleIds);
-    tempSelectedStyles = List<String>.from(defaultStyleIds);
+    _styleWeights = _equalizeWeights(_selectedStyleIds);
+  }
 
-    // ✅ 使用共用 UserProfile 模型
-    profile = UserProfile(
-      height: 175,
-      weight: 70,
-      shoulderWidth: 45,
-      waistline: 80,
-      fitPreference: 'regular',         // 'slim' | 'regular' | 'oversized'
-      colorBlacklist: <String>[],
-      hasMotorcycle: false,
-      commuteMethod: 'public',          // 'public' | 'car' | 'walk'
-      styleWeights: _even100(selectedStyleIds),
-      gender: 'male',                   // 'male' | 'female' | 'other'
+  // 依容器寬度給最大內容寬
+  double _maxW(double w) {
+    if (w >= 1600) return 1100;
+    if (w >= 1200) return 1000;
+    if (w >= 900) return 860;
+    if (w >= 600) return 560;
+    return w - 24;
+  }
+
+  // 權重平均（總和 100）
+  Map<String, int> _equalizeWeights(List<String> ids) {
+    final map = <String, int>{};
+    if (ids.isEmpty) return map;
+    final base = (100 ~/ ids.length);
+    var remain = 100 - base * ids.length;
+    for (var i = 0; i < ids.length; i++) {
+      map[ids[i]] = base + (i < remain ? 1 : 0);
+    }
+    return map;
+  }
+
+  List<StyleOption> get _allStyles => [..._defaultStyles, ..._customStyles];
+
+  void _toggleTempStyle(String id) {
+    setState(() {
+      if (_tempSelectedStyleIds.contains(id)) {
+        _tempSelectedStyleIds.remove(id);
+      } else {
+        _tempSelectedStyleIds.add(id);
+      }
+    });
+  }
+
+  void _confirmStyleSelection() {
+    setState(() {
+      _selectedStyleIds = _tempSelectedStyleIds.isEmpty ? [..._defaultSelected] : [..._tempSelectedStyleIds];
+      _styleWeights = _equalizeWeights(_selectedStyleIds);
+      _isStyleDialogOpen = false;
+    });
+  }
+
+  void _addCustomStyle() {
+    final name = _newStyleCtrl.text.trim();
+    if (name.isEmpty) return;
+    // 簡單驗證：不可重複
+    final exists = _allStyles.any((s) => s.label == name);
+    if (exists) return;
+
+    final id = 'custom_${name.hashCode.abs()}';
+    setState(() {
+      _customStyles.add(StyleOption(id: id, label: name, isCustom: true));
+      _tempSelectedStyleIds.add(id);
+      _newStyleCtrl.clear();
+    });
+  }
+
+  // 偏好 setter / getter
+  void _setColorPref(String id, ColorPreferenceLevel level) {
+    setState(() => _colorPrefs[id] = level);
+  }
+
+  ColorPreferenceLevel _getColorPref(String id) {
+    return _colorPrefs[id] ?? ColorPreferenceLevel.neutral;
+  }
+
+  // 完成 → 輸出 UserProfile
+  void _finish() {
+    // 把 never 顏色轉成 colorBlacklist（其餘等級不落地到模型，之後你要擴充可再加欄位）
+    final blacklist = _colorPrefs.entries
+        .where((e) => e.value == ColorPreferenceLevel.never)
+        .map((e) => e.key)
+        .toList();
+
+    final profile = UserProfile(
+      height: _height,
+      weight: _weight,
+      shoulderWidth: _shoulder,
+      waistline: _waist,
+      fitPreference: _fitPreference,
+      colorBlacklist: blacklist,
+      hasMotorcycle: _hasMotorcycle,
+      commuteMethod: _commuteMethod,
+      styleWeights: _styleWeights,
+      gender: _gender,
     );
+
+    widget.onComplete(profile);
   }
 
-  @override
-  void dispose() {
-    newStyleCtrl.dispose();
-    super.dispose();
-  }
-
-  List<StyleOption> _allStyles() => [...kDefaultStyleOptions, ...customStyles];
-  List<StyleOption> _displayedStyles() =>
-      _allStyles().where((s) => selectedStyleIds.contains(s.id)).toList();
-
-  UserProfile _withWeights(Map<String, int> w) => profile.copyWith(styleWeights: w);
-
-  // ---------------------------- UI ----------------------------
+  // -------------------- UI --------------------
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, c) {
-      final width = c.maxWidth;
-      final isCompact = width < 600;
+    final w = MediaQuery.of(context).size.width;
 
-      return Scaffold(
-        backgroundColor: const Color(0xFFEFF3FF),
-        body: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900),
+    return Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: _maxW(w)),
+          child: SafeArea(
             child: SingleChildScrollView(
-              padding: EdgeInsets.all(isCompact ? 12 : 20),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               child: Column(
                 children: [
-                  const SizedBox(height: 8),
-                  _StepIndicators(current: step),
-                  const SizedBox(height: 16),
+                  _buildStepper(context),
+                  const SizedBox(height: 12),
                   Card(
-                    elevation: 4,
+                    elevation: 2,
                     clipBehavior: Clip.antiAlias,
                     child: Padding(
-                      padding: EdgeInsets.all(isCompact ? 12 : 24),
+                      padding: const EdgeInsets.all(16),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (step == 1) _buildStep1(isCompact),
-                          if (step == 2) _buildStep2(),
-                          if (step == 3) _buildStep3(),
-
-                          const SizedBox(height: 12),
-                          const Divider(),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: Row(
-                              children: [
-                                if (step > 1)
-                                  OutlinedButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        step -= 1;
-                                      });
-                                    },
-                                    child: const Text('上一步'),
-                                  ),
-                                const Spacer(),
-                                ElevatedButton(
-                                  onPressed: _next,
-                                  child: Text(step == 3 ? '完成設定' : '下一步'),
-                                ),
-                              ],
-                            ),
-                          )
+                          if (_step == 1) _stepBasic(context),
+                          if (_step == 2) _stepStyleAndColors(context),
+                          if (_step == 3) _stepReview(context),
+                          const Divider(height: 28),
+                          _buildFooterButtons(),
                         ],
                       ),
                     ),
@@ -195,42 +212,70 @@ class _OnboardingPageState extends State<OnboardingPage> {
             ),
           ),
         ),
-      );
-    });
+      ),
+    );
   }
 
-  Widget _buildStep1(bool isCompact) {
+  // 進度顯示
+  Widget _buildStepper(BuildContext context) {
+    Widget dot(int s) {
+      final isDone = s < _step;
+      final isNow = s == _step;
+      final bg = isDone
+          ? Colors.green
+          : isNow
+              ? Theme.of(context).colorScheme.primary
+              : Colors.white;
+      final fg = (isDone || isNow) ? Colors.white : Colors.grey;
+
+      return Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.grey.shade300),
+          boxShadow: isNow
+              ? [BoxShadow(color: bg.withOpacity(.25), blurRadius: 10)]
+              : null,
+        ),
+        child: Center(
+          child: isDone
+              ? const Icon(Icons.check_circle, size: 22, color: Colors.white)
+              : Text('$s', style: TextStyle(fontSize: 18, color: fg)),
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        dot(1), const SizedBox(width: 12),
+        dot(2), const SizedBox(width: 12),
+        dot(3),
+      ],
+    );
+  }
+
+  // -------------------- Step 1：基本資料 --------------------
+  Widget _stepBasic(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 4),
+        const SizedBox(height: 8),
         Center(
           child: Column(
             children: [
-              Container(
-                width: isCompact ? 56 : 64,
-                height: isCompact ? 56 : 64,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  gradient: const LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF4F46E5)]),
-                  boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 12, offset: Offset(0, 6))],
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  'W',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: isCompact ? 24 : 28,
-                      fontWeight: FontWeight.bold),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text('歡迎來到 WEAR', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 4),
+              // ← 統一為黑漸層 Logo 方塊（與 Login 相同樣式）
+              const BlackLogoBox(), // 預設 80x80，可改 size 參數
+              const SizedBox(height: 10),
+              Text('歡迎來到神穿 StylistOS', style: tt.titleLarge),
+              const SizedBox(height: 6),
               Text(
                 '讓我們了解你的身材和偏好，為你打造專屬穿搭建議',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54),
+                style: tt.bodySmall?.copyWith(color: Colors.grey[600]),
               ),
             ],
           ),
@@ -238,894 +283,628 @@ class _OnboardingPageState extends State<OnboardingPage> {
         const SizedBox(height: 20),
 
         // 性別
-        _Section(
-          title: '性別',
-          child: Column(
-            children: [
-              RadioListTile<String>(
-                title: const Text('男性'),
-                value: 'male',
-                groupValue: profile.gender,
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() {
-                      profile = profile.copyWith(gender: v);
-                    });
-                  }
-                },
-                dense: true,
-              ),
-              RadioListTile<String>(
-                title: const Text('女性'),
-                value: 'female',
-                groupValue: profile.gender,
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() {
-                      profile = profile.copyWith(gender: v);
-                    });
-                  }
-                },
-                dense: true,
-              ),
-              RadioListTile<String>(
-                title: const Text('其他 / 不透露'),
-                value: 'other',
-                groupValue: profile.gender,
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() {
-                      profile = profile.copyWith(gender: v);
-                    });
-                  }
-                },
-                dense: true,
-              ),
-            ],
-          ),
-        ),
-
+        Text('性別', style: tt.titleMedium),
         const SizedBox(height: 8),
-
-        // 身形資料
-        _Section(
-          title: '身形資料',
-          child: _ResponsiveGrid(
-            columnsWhenWide: 2,
-            spacing: 12,
-            children: [
-              _NumberField(
-                label: '身高 (cm)',
-                value: profile.height,
-                onChanged: (n) {
-                  setState(() {
-                    profile = profile.copyWith(height: n);
-                  });
-                },
-              ),
-              _NumberField(
-                label: '體重 (kg)',
-                value: profile.weight,
-                onChanged: (n) {
-                  setState(() {
-                    profile = profile.copyWith(weight: n);
-                  });
-                },
-              ),
-              _NumberField(
-                label: '肩寬 (cm)',
-                value: profile.shoulderWidth,
-                onChanged: (n) {
-                  setState(() {
-                    profile = profile.copyWith(shoulderWidth: n);
-                  });
-                },
-              ),
-              _NumberField(
-                label: '腰圍 (cm)',
-                value: profile.waistline,
-                onChanged: (n) {
-                  setState(() {
-                    profile = profile.copyWith(waistline: n);
-                  });
-                },
-              ),
-            ],
-          ),
+        Wrap(
+          spacing: 18,
+          children: [
+            _radio('男性', 'male', group: _gender, onChanged: (v) => setState(() => _gender = v)),
+            _radio('女性', 'female', group: _gender, onChanged: (v) => setState(() => _gender = v)),
+            _radio('其他 / 不透露', 'other', group: _gender, onChanged: (v) => setState(() => _gender = v)),
+          ],
         ),
+        const SizedBox(height: 16),
 
-        const SizedBox(height: 8),
-
-        // 版型偏好
-        _Section(
-          title: '版型偏好',
-          child: Column(
-            children: [
-              RadioListTile<String>(
-                title: const Text('修身 Slim Fit'),
-                value: 'slim',
-                groupValue: profile.fitPreference,
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() {
-                      profile = profile.copyWith(fitPreference: v);
-                    });
-                  }
-                },
-                dense: true,
+        // 身形
+        LayoutBuilder(
+          builder: (_, c) {
+            final twoCols = c.maxWidth >= 520;
+            return GridView(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: twoCols ? 2 : 1,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: twoCols ? 5 : 6,
               ),
-              RadioListTile<String>(
-                title: const Text('標準 Regular Fit'),
-                value: 'regular',
-                groupValue: profile.fitPreference,
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() {
-                      profile = profile.copyWith(fitPreference: v);
-                    });
-                  }
-                },
-                dense: true,
-              ),
-              RadioListTile<String>(
-                title: const Text('寬鬆 Oversized'),
-                value: 'oversized',
-                groupValue: profile.fitPreference,
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() {
-                      profile = profile.copyWith(fitPreference: v);
-                    });
-                  }
-                },
-                dense: true,
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 8),
-
-        // 通勤方式
-        _Section(
-          title: '通勤方式',
-          child: Column(
-            children: [
-              RadioListTile<String>(
-                title: const Text('步行'),
-                value: 'walk',
-                groupValue: profile.commuteMethod,
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() {
-                      profile = profile.copyWith(commuteMethod: v);
-                    });
-                  }
-                },
-                dense: true,
-              ),
-              RadioListTile<String>(
-                title: const Text('汽車'),
-                value: 'car',
-                groupValue: profile.commuteMethod,
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() {
-                      profile = profile.copyWith(commuteMethod: v);
-                    });
-                  }
-                },
-                dense: true,
-              ),
-              RadioListTile<String>(
-                title: const Text('大眾運輸'),
-                value: 'public',
-                groupValue: profile.commuteMethod,
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() {
-                      profile = profile.copyWith(commuteMethod: v);
-                    });
-                  }
-                },
-                dense: true,
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 8),
-        SwitchListTile.adaptive(
-          title: const Text('經常騎機車'),
-          subtitle: const Text('用於推薦更適合騎乘的穿搭'),
-          value: profile.hasMotorcycle,
-          onChanged: (v) {
-            setState(() {
-              profile = profile.copyWith(hasMotorcycle: v);
-            });
+              children: [
+                _numberField('身高 (cm)', _height, (v) => setState(() => _height = v)),
+                _numberField('體重 (kg)', _weight, (v) => setState(() => _weight = v)),
+                _numberField('肩寬 (cm)', _shoulder, (v) => setState(() => _shoulder = v)),
+                _numberField('腰圍 (cm)', _waist, (v) => setState(() => _waist = v)),
+              ],
+            );
           },
-          contentPadding: EdgeInsets.zero,
+        ),
+        const SizedBox(height: 12),
+
+        // 版型
+        Text('版型偏好', style: tt.titleMedium),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 18,
+          children: [
+            _radio('修身 Slim Fit', 'slim', group: _fitPreference, onChanged: (v) => setState(() => _fitPreference = v)),
+            _radio('標準 Regular Fit', 'regular', group: _fitPreference, onChanged: (v) => setState(() => _fitPreference = v)),
+            _radio('寬鬆 Loose Fit', 'loose', group: _fitPreference, onChanged: (v) => setState(() => _fitPreference = v)),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // 通勤
+        Text('通勤方式', style: tt.titleMedium),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 18,
+          children: [
+            _radio('步行', 'walk', group: _commuteMethod, onChanged: (v) => setState(() => _commuteMethod = v)),
+            _radio('腳踏車', 'bike', group: _commuteMethod, onChanged: (v) => setState(() => _commuteMethod = v)),
+            _radio('機車', 'motorcycle', group: _commuteMethod, onChanged: (v) { setState(() { _commuteMethod = v; _hasMotorcycle = true; }); }),
+            _radio('汽車', 'car', group: _commuteMethod, onChanged: (v) => setState(() => _commuteMethod = v)),
+            _radio('大眾運輸', 'public', group: _commuteMethod, onChanged: (v) => setState(() => _commuteMethod = v)),
+          ],
         ),
       ],
     );
   }
 
-  Widget _buildStep2() {
-    final displayed = _displayedStyles();
+  // -------------------- Step 2：風格 + 顏色 --------------------
+  Widget _stepStyleAndColors(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // 風格
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Icon(Icons.palette_outlined),
-            const SizedBox(width: 8),
-            Text('風格與顏色偏好',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-            const Spacer(),
+            Text('選擇你喜歡的風格', style: tt.titleMedium),
             OutlinedButton.icon(
-              onPressed: _openStyleDialog,
-              icon: const Icon(Icons.add),
+              onPressed: () {
+                setState(() {
+                  _tempSelectedStyleIds = [..._selectedStyleIds];
+                  _isStyleDialogOpen = true;
+                });
+                showDialog(
+                  context: context,
+                  builder: (_) => _styleDialog(context),
+                ).then((_) => setState(() => _isStyleDialogOpen = false));
+              },
+              icon: const Icon(Icons.add, size: 18),
               label: const Text('更多風格選項'),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
 
-        // 選中的風格
         Container(
+          width: double.infinity,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            border: Border.all(color: Colors.grey.shade300, style: BorderStyle.solid, width: 1.2),
             borderRadius: BorderRadius.circular(12),
-            color: Colors.grey.shade100,
-            border: Border.all(color: Colors.grey.shade300, width: 2),
           ),
-          child: displayed.isNotEmpty
-              ? Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+          child: _selectedStyleIds.isEmpty
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    for (final style in displayed)
-                      _RemovableBadge(
-                        label: style.label,
-                        isCustom: style.isCustom,
-                        onRemove: () {
-                          if (selectedStyleIds.length <= 1) {
-                            _toast('至少需要選擇一個風格');
-                            return;
-                          }
-                          setState(() {
-                            selectedStyleIds.remove(style.id);
-                            profile = _withWeights(_even100(selectedStyleIds));
-                          });
-                        },
-                      ),
+                    const Icon(Icons.auto_awesome, color: Colors.grey, size: 28),
+                    const SizedBox(height: 6),
+                    Text('點擊「更多風格選項」開始選擇', style: tt.bodySmall?.copyWith(color: Colors.grey)),
                   ],
                 )
-              : const _EmptyHint(icon: Icons.auto_awesome_outlined, text: '點擊「更多風格選項」開始選擇您喜歡的風格'),
+              : Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _selectedStyleIds.map((id) {
+                    final style = _allStyles.firstWhere((s) => s.id == id);
+                    return GestureDetector(
+                      onTap: () {
+                        if (_selectedStyleIds.length <= 1) return;
+                        setState(() {
+                          _selectedStyleIds.remove(id);
+                          _styleWeights = _equalizeWeights(_selectedStyleIds);
+                        });
+                      },
+                      child: Chip(
+                        label: Text(style.label, style: const TextStyle(color: Colors.white)),
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        deleteIcon: const Icon(Icons.close, color: Colors.white70, size: 18),
+                        onDeleted: null,
+                      ),
+                    );
+                  }).toList(),
+                ),
         ),
+        const SizedBox(height: 16),
 
-        const SizedBox(height: 8),
+        // 顏色偏好（提示 + 基本色）
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            color: const Color(0xFFEFF6FF),
+            gradient: const LinearGradient(colors: [Color(0xFFEFF6FF), Color(0xFFF5F3FF)]),
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: const Text('💡 提示：點擊風格標籤可以取消選擇，系統會自動平均分配權重', style: TextStyle(fontSize: 12)),
-        ),
-
-        const SizedBox(height: 20),
-        Text('顏色黑名單（不想穿的顏色）', style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            for (final c in availableColors)
-              _ColorTile(
-                swatch: c,
-                blocked: profile.colorBlacklist.contains(c.id),
-                onTap: () {
-                  setState(() {
-                    final list = [...profile.colorBlacklist];
-                    if (list.contains(c.id)) {
-                      list.remove(c.id);
-                    } else {
-                      list.add(c.id);
-                    }
-                    profile = profile.copyWith(colorBlacklist: list);
-                  });
-                },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('顏色偏好設定', style: tt.titleMedium),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _legendDot(color: Colors.pink, label: '喜歡：優先推薦'),
+                  _legendDot(color: Colors.grey, label: '普通：正常推薦'),
+                  _legendDot(color: Colors.orange, label: '少穿：降低推薦'),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Switch(value: _showNever, onChanged: (v) => setState(() => _showNever = v)),
+                      const SizedBox(width: 6),
+                      const Text('顯示「絕不建議」'),
+                    ],
+                  ),
+                ],
               ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // 基本色（固定高度避免溢位）
+        LayoutBuilder(
+          builder: (_, c) {
+            final twoCols = c.maxWidth >= 520;
+            final extent = twoCols ? 164.0 : 156.0;
+            return GridView(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: twoCols ? 2 : 1,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                mainAxisExtent: extent, // 固定主軸高度
+              ),
+              children: _basicColors.map((e) => _colorTile(e)).toList(),
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+
+        // 更多顏色（可展開）— 同樣用固定高度避免溢位
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: EdgeInsets.zero,
+          initiallyExpanded: _expandMoreColors,
+          onExpansionChanged: (v) => setState(() => _expandMoreColors = v),
+          title: Row(
+            children: const [
+              Icon(Icons.palette_outlined, size: 18),
+              SizedBox(width: 6),
+              Text('更多顏色偏好設定'),
+            ],
+          ),
+          children: [
+            const SizedBox(height: 8),
+            LayoutBuilder(
+              builder: (_, c) {
+                final cols = c.maxWidth >= 900 ? 3 : (c.maxWidth >= 600 ? 2 : 1);
+                final extent = cols >= 2 ? 164.0 : 156.0;
+                return GridView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: cols,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    mainAxisExtent: extent,
+                  ),
+                  children: _moreColors.map((e) => _colorTile(e)).toList(),
+                );
+              },
+            ),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildStep3() {
-    final all = _allStyles();
-    final weights = profile.styleWeights;
-    final nonZero = weights.entries.where((e) => e.value > 0).toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+  // 顏色卡片
+  Widget _colorTile((String id, String label, Color color) e) {
+    final pref = _getColorPref(e.$1);
 
-    String fitLabel(String v) {
-      switch (v) {
-        case 'slim':
-          return '修身';
-        case 'regular':
-          return '標準';
-        case 'oversized':
-          return '寬鬆';
-        default:
-          return v;
-      }
+    Widget prefBtn(
+      ColorPreferenceLevel level,
+      IconData icon,
+      Color active, {
+      String? tooltip,
+    }) {
+      final selected = pref == level;
+      return Expanded(
+        child: Tooltip(
+          message: tooltip ?? level.name,
+          child: InkWell(
+            onTap: () => _setColorPref(e.$1, level),
+            borderRadius: BorderRadius.circular(6),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(vertical: 6), // 較小避免撐高
+              decoration: BoxDecoration(
+                color: selected ? active : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(
+                icon,
+                size: 16,
+                color: selected ? Colors.white : Colors.grey,
+              ),
+            ),
+          ),
+        ),
+      );
     }
 
-    String commuteLabel(String v) {
-      switch (v) {
-        case 'public':
-          return '大眾運輸';
-        case 'car':
-          return '汽車';
-        case 'walk':
-          return '步行';
-        default:
-          return v;
-      }
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.check_circle_outline),
-            const SizedBox(width: 8),
-            Text('確認資料',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
-          child: _ResponsiveGrid(
-            columnsWhenWide: 2,
-            spacing: 12,
-            children: [
-              _KV(label: '身高', value: '${profile.height} cm'),
-              _KV(label: '體重', value: '${profile.weight} kg'),
-              _KV(label: '版型偏好', value: fitLabel(profile.fitPreference)),
-              _KV(label: '通勤方式', value: commuteLabel(profile.commuteMethod)),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('已選擇的風格', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54)),
-              const SizedBox(height: 8),
-              if (selectedStyleIds.isEmpty)
-                const Text('尚未選擇風格', style: TextStyle(color: Colors.black45))
-              else
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final id in selectedStyleIds)
-                      Chip(
-                        label: Text(
-                          all.firstWhere((s) => s.id == id, orElse: () => StyleOption(id: id, label: id)).label,
-                        ),
-                      ),
-                  ],
-                ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('風格權重', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54)),
-              const SizedBox(height: 8),
-              if (nonZero.isEmpty)
-                const Text('未設定風格權重', style: TextStyle(color: Colors.black45))
-              else
-                ...[
-                  for (final e in nonZero)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(all.firstWhere((s) => s.id == e.key, orElse: () => StyleOption(id: e.key, label: e.key)).label),
-                        Text('${e.value}%'),
-                      ],
-                    ),
-                ],
-            ],
-          ),
-        ),
-
-        if (profile.colorBlacklist.isNotEmpty) ...[
-          const SizedBox(height: 12),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.grey.shade200, width: 1.5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
           Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: e.$3,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: e.$3.computeLuminance() > .8
+                    ? Colors.grey.shade300
+                    : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(e.$2, style: const TextStyle(fontSize: 12)),
+          const SizedBox(height: 8),
+          // 固定底部控制列高度，避免被內容撐高
+          SizedBox(
+            height: 36,
+            child: Row(
               children: [
-                Text('不想穿的顏色', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final id in profile.colorBlacklist)
-                      Chip(label: Text(availableColors.firstWhere((c) => c.id == id).label)),
-                  ],
-                ),
+                prefBtn(ColorPreferenceLevel.like, Icons.favorite, Colors.pink, tooltip: '喜歡'),
+                const SizedBox(width: 6),
+                prefBtn(ColorPreferenceLevel.neutral, Icons.remove, Colors.grey, tooltip: '普通'),
+                const SizedBox(width: 6),
+                prefBtn(ColorPreferenceLevel.avoid, Icons.block, Colors.orange, tooltip: '少穿'),
+                if (_showNever) ...[
+                  const SizedBox(width: 6),
+                  prefBtn(ColorPreferenceLevel.never, Icons.shield, Colors.red, tooltip: '絕不建議'),
+                ],
               ],
             ),
           ),
         ],
-      ],
-    );
-  }
-
-  void _openStyleDialog() {
-    tempSelectedStyles = List<String>.from(selectedStyleIds);
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) {
-          final all = _allStyles();
-          return Dialog(
-            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720, maxHeight: 680),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.palette_outlined),
-                        const SizedBox(width: 8),
-                        const Text('選擇您喜歡的風格',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                        const Spacer(),
-                        IconButton(onPressed: () => Navigator.of(ctx).pop(), icon: const Icon(Icons.close)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text('點選標籤以加入/移除；您已選擇 ${tempSelectedStyles.length} 個風格',
-                        style: Theme.of(context).textTheme.bodySmall),
-                    const Divider(height: 24),
-
-                    // 自訂風格
-                    Row(
-                      children: [
-                        const Icon(Icons.auto_awesome_outlined),
-                        const SizedBox(width: 8),
-                        const Text('新增自訂風格', style: TextStyle(fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: newStyleCtrl,
-                            maxLength: 20,
-                            decoration: const InputDecoration(
-                              hintText: '輸入風格名稱（如：嘻哈、龐克）',
-                              counterText: '',
-                            ),
-                            onSubmitted: (_) => _addCustomStyle(setLocal),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          onPressed: () => _addCustomStyle(setLocal),
-                          icon: const Icon(Icons.add),
-                          label: const Text('新增'),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final style in all)
-                              _SelectableBadge(
-                                label: style.label,
-                                selected: tempSelectedStyles.contains(style.id),
-                                isCustom: style.isCustom,
-                                onTap: () {
-                                  setLocal(() {
-                                    if (tempSelectedStyles.contains(style.id)) {
-                                      tempSelectedStyles.remove(style.id);
-                                    } else {
-                                      tempSelectedStyles.add(style.id);
-                                    }
-                                  });
-                                },
-                                onDelete: style.isCustom
-                                    ? () {
-                                        setLocal(() {
-                                          customStyles =
-                                              customStyles.where((s) => s.id != style.id).toList();
-                                          tempSelectedStyles.remove(style.id);
-                                          selectedStyleIds.remove(style.id);
-                                          final newW = {...profile.styleWeights}..remove(style.id);
-                                          setState(() {
-                                            profile = _withWeights(newW);
-                                          });
-                                        });
-                                      }
-                                    : null,
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const Divider(height: 24),
-                    Row(
-                      children: [
-                        Text('已選擇 ${tempSelectedStyles.length} 個風格',
-                            style: Theme.of(context).textTheme.bodySmall),
-                        const Spacer(),
-                        OutlinedButton(
-                          onPressed: () => Navigator.of(ctx).pop(),
-                          child: const Text('取消'),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              if (tempSelectedStyles.isEmpty) {
-                                selectedStyleIds = List<String>.from(defaultStyleIds);
-                              } else {
-                                selectedStyleIds = List<String>.from(tempSelectedStyles);
-                              }
-                              profile = _withWeights(_even100(selectedStyleIds));
-                            });
-                            Navigator.of(ctx).pop();
-                          },
-                          child: const Text('確認選擇'),
-                        ),
-                      ],
-                    )
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
       ),
     );
   }
 
-  void _addCustomStyle(void Function(void Function()) setLocal) {
-    final name = newStyleCtrl.text;
-    final err = validateCustomStyleName(name, _allStyles());
-    if (err != null) {
-      _toast(err);
-      return;
+  // -------------------- Step 3：確認 --------------------
+  Widget _stepReview(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final styles = _selectedStyleIds
+        .map((id) => (_allStyles.firstWhere((s) => s.id == id).label, _styleWeights[id] ?? 0))
+        .toList()
+      ..sort((a, b) => b.$2.compareTo(a.$2));
+
+    List<(String id, String label)> _byLevel(ColorPreferenceLevel level) {
+      final all = [..._basicColors, ..._moreColors];
+      final ids = _colorPrefs.entries.where((e) => e.value == level).map((e) => e.key).toSet();
+      return all.where((c) => ids.contains(c.$1)).map((c) => (c.$1, c.$2)).toList();
     }
-    final newStyle = StyleOption(id: generateCustomStyleId(name), label: name.trim(), isCustom: true);
-    setLocal(() {
-      customStyles = [...customStyles, newStyle];
-      tempSelectedStyles.add(newStyle.id);
-      newStyleCtrl.clear();
-    });
-    _toast('已新增風格「${newStyle.label}」');
-  }
 
-  void _toast(String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-
-  void _next() {
-    if (step < 3) {
-      setState(() {
-        step += 1;
-      });
-    } else {
-      widget.onComplete(profile);
-    }
-  }
-}
-
-/// ---------------------------- 小元件 ----------------------------
-class _StepIndicators extends StatelessWidget {
-  final int current; // 1..3
-  const _StepIndicators({required this.current});
-
-  Color _color(int s) {
-    if (s < current) return Colors.green;
-    if (s == current) return const Color(0xFF2563EB);
-    return Colors.white;
-  }
-
-  Color _textColor(int s) => s <= current ? Colors.white : Colors.grey.shade500;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: 10,
-      children: [
-        for (int s = 1; s <= 3; s++)
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: _color(s),
-              shape: BoxShape.circle,
-              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 3))],
-              border: s > current ? Border.all(color: Colors.grey.shade300) : null,
-            ),
-            alignment: Alignment.center,
-            child: s < current
-                ? const Icon(Icons.check_circle, color: Colors.white)
-                : Text('$s', style: TextStyle(fontWeight: FontWeight.w600, color: _textColor(s))),
-          )
-      ],
-    );
-  }
-}
-
-class _Section extends StatelessWidget {
-  final String title;
-  final Widget child;
-  const _Section({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        child,
-      ],
-    );
-  }
-}
-
-class _ResponsiveGrid extends StatelessWidget {
-  final int columnsWhenWide;
-  final double spacing;
-  final List<Widget> children;
-  const _ResponsiveGrid({required this.columnsWhenWide, required this.spacing, required this.children});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, c) {
-      final isWide = c.maxWidth >= 600;
-      if (!isWide) {
-        return Column(
-          children: [
-            for (int i = 0; i < children.length; i++) ...[
-              if (i > 0) SizedBox(height: spacing),
-              children[i],
-            ]
-          ],
+    Widget tag(String text, Color bg) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+          child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 12)),
         );
-      }
-      return GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: columnsWhenWide,
-          crossAxisSpacing: spacing,
-          mainAxisSpacing: spacing,
-          childAspectRatio: 3.2,
-        ),
-        itemCount: children.length,
-        itemBuilder: (_, i) => children[i],
-      );
-    });
-  }
-}
 
-class _NumberField extends StatelessWidget {
-  final String label;
-  final int value;
-  final ValueChanged<int> onChanged;
-  const _NumberField({required this.label, required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = TextEditingController(text: value.toString());
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(label),
-        const SizedBox(height: 6),
-        TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          onChanged: (v) {
-            final n = int.tryParse(v) ?? value;
-            onChanged(n);
-          },
-          decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+        // 基本欄位
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+          child: LayoutBuilder(builder: (_, c) {
+            final twoCols = c.maxWidth >= 520;
+            return GridView(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: twoCols ? 2 : 1,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 12,
+                childAspectRatio: 6,
+              ),
+              children: [
+                _kv('身高', '$_height cm'),
+                _kv('體重', '$_weight kg'),
+                _kv('版型偏好', _fitPreference == 'slim' ? '修身' : _fitPreference == 'regular' ? '標準' : '寬鬆'),
+                _kv('通勤方式', {
+                  'walk': '步行',
+                  'bike': '腳踏車',
+                  'motorcycle': '機車',
+                  'car': '汽車',
+                  'public': '大眾運輸'
+                }[_commuteMethod] ?? _commuteMethod),
+              ],
+            );
+          }),
         ),
+        const SizedBox(height: 12),
+
+        // 風格權重
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('風格權重', style: tt.titleMedium),
+              const SizedBox(height: 8),
+              if (styles.isEmpty)
+                Text('未設定風格權重', style: tt.bodySmall?.copyWith(color: Colors.grey))
+              else
+                ...styles.map((e) => Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [Text(e.$1), Text('${e.$2}%')],
+                    )),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // 顏色偏好摘要
+        if (_colorPrefs.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('顏色偏好', style: tt.titleMedium),
+                const SizedBox(height: 8),
+                if (_byLevel(ColorPreferenceLevel.like).isNotEmpty) ...[
+                  Row(children: const [Icon(Icons.favorite, color: Colors.pink, size: 16), SizedBox(width: 6), Text('喜歡')]),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _byLevel(ColorPreferenceLevel.like).map((e) => tag(e.$2, Colors.pink)).toList(),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                if (_byLevel(ColorPreferenceLevel.avoid).isNotEmpty) ...[
+                  Row(children: const [Icon(Icons.block, color: Colors.orange, size: 16), SizedBox(width: 6), Text('少穿')]),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _byLevel(ColorPreferenceLevel.avoid).map((e) => tag(e.$2, Colors.orange)).toList(),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                if (_showNever && _byLevel(ColorPreferenceLevel.never).isNotEmpty) ...[
+                  Row(children: const [Icon(Icons.shield, color: Colors.red, size: 16), SizedBox(width: 6), Text('絕不建議')]),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _byLevel(ColorPreferenceLevel.never).map((e) => tag(e.$2, Colors.red)).toList(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  // -------------------- Footer Buttons --------------------
+  Widget _buildFooterButtons() {
+    return Row(
+      children: [
+        if (_step > 1)
+          OutlinedButton(
+            onPressed: () => setState(() => _step -= 1),
+            child: const Text('上一步'),
+          ),
+        const Spacer(),
+        FilledButton(
+          onPressed: () {
+            if (_step < 3) {
+              setState(() => _step += 1);
+            } else {
+              _finish();
+            }
+          },
+          child: Text(_step == 3 ? '完成設定' : '下一步'),
+        ),
+      ],
+    );
+  }
+
+  // -------------------- Dialog: 風格選擇 --------------------
+  Widget _styleDialog(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(children: const [Icon(Icons.style, size: 20), SizedBox(width: 8), Text('選擇您喜歡的風格')]),
+              const SizedBox(height: 12),
+              // 新增自訂風格
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _newStyleCtrl,
+                      decoration: const InputDecoration(
+                        hintText: '輸入風格名稱（如：嘻哈、龐克）',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onSubmitted: (_) => _addCustomStyle(),
+                      maxLength: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: _addCustomStyle,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('新增'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // 標籤選擇
+              SingleChildScrollView(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _allStyles.map((s) {
+                    final selected = _tempSelectedStyleIds.contains(s.id);
+                    return ChoiceChip(
+                      selected: selected,
+                      label: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Text(s.label),
+                        if (s.isCustom) const SizedBox(width: 4),
+                        if (s.isCustom) const Text('✨', style: TextStyle(fontSize: 12)),
+                      ]),
+                      onSelected: (_) => _toggleTempStyle(s.id),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Text('已選擇 ${_tempSelectedStyleIds.length} 個風格', style: const TextStyle(color: Colors.grey)),
+                  const Spacer(),
+                  OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () {
+                      _confirmStyleSelection();
+                      Navigator.pop(context);
+                    },
+                    child: const Text('確認選擇'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // -------------------- 小元件 --------------------
+  Widget _radio(String label, String value, {required String group, required ValueChanged<String> onChanged}) {
+    return InkWell(
+      onTap: () => onChanged(value),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Radio<String>(value: value, groupValue: group, onChanged: (v) => v != null ? onChanged(v) : null),
+          Text(label),
+        ],
+      ),
+    );
+  }
+
+  Widget _numberField(String label, int value, ValueChanged<int> onChanged) {
+    final ctrl = TextEditingController(text: value.toString());
+    return TextField(
+      controller: ctrl,
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), isDense: true),
+      onChanged: (s) {
+        final v = int.tryParse(s);
+        if (v != null) onChanged(v);
+      },
+    );
+  }
+
+  Widget _kv(String k, String v) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [Text(k), Text(v, style: const TextStyle(fontWeight: FontWeight.w600))],
+    );
+  }
+
+  Widget _legendDot({required Color color, required String label}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 12)),
       ],
     );
   }
 }
 
-class _SelectableBadge extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  final bool isCustom;
-  final VoidCallback? onDelete;
-  const _SelectableBadge({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.isCustom = false,
-    this.onDelete,
+/// 共用：黑漸層 Logo 方塊（灰→黑漸層、22 圓角、陰影、置中白色「S」）
+class BlackLogoBox extends StatelessWidget {
+  final double size;
+  final double radius;
+  final String letter;
+  const BlackLogoBox({
+    super.key,
+    this.size = 80,
+    this.radius = 22,
+    this.letter = 'S',
   });
 
   @override
   Widget build(BuildContext context) {
-    final bg = selected ? const Color(0xFF2563EB) : Colors.transparent;
-    final fg = selected ? Colors.white : Colors.black87;
-    final border = selected ? Colors.transparent : Colors.grey.shade400;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: border),
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF9CA3AF), Color(0xFF111827)], // gray-400 → gray-900
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label, style: TextStyle(color: fg)),
-            if (isCustom) const Padding(padding: EdgeInsets.only(left: 4), child: Text('✨', style: TextStyle(fontSize: 12))),
-            if (selected) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.check_circle, size: 16, color: Colors.white)),
-            if (onDelete != null)
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: InkWell(onTap: onDelete, child: Icon(Icons.close, size: 16, color: selected ? Colors.white70 : Colors.black54)),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RemovableBadge extends StatelessWidget {
-  final String label;
-  final bool isCustom;
-  final VoidCallback onRemove;
-  const _RemovableBadge({required this.label, required this.onRemove, this.isCustom = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onRemove,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        decoration: BoxDecoration(color: const Color(0xFF2563EB), borderRadius: BorderRadius.circular(18)),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label, style: const TextStyle(color: Colors.white)),
-            if (isCustom) const Padding(padding: EdgeInsets.only(left: 4), child: Text('✨', style: TextStyle(fontSize: 12, color: Colors.white70))),
-            const SizedBox(width: 4),
-            const Icon(Icons.close, size: 14, color: Colors.white70),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyHint extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  const _EmptyHint({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Column(
-        children: [
-          Icon(icon, size: 28, color: Colors.grey.shade500),
-          const SizedBox(height: 8),
-          Text(text, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: const [
+          BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 8)),
         ],
       ),
-    );
-  }
-}
-
-class _ColorSwatch {
-  final String id;
-  final String label;
-  final Color color;
-  const _ColorSwatch({required this.id, required this.label, required this.color});
-}
-
-class _ColorTile extends StatelessWidget {
-  final _ColorSwatch swatch;
-  final bool blocked;
-  final VoidCallback onTap;
-  const _ColorTile({required this.swatch, required this.blocked, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              Container(width: 64, height: 64, decoration: BoxDecoration(color: swatch.color, borderRadius: BorderRadius.circular(10))),
-              if (blocked)
-                Transform.rotate(
-                  angle: 0.785398, // 45°
-                  child: Container(width: 4, height: 72, color: Colors.red.shade600),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(swatch.label, style: const TextStyle(fontSize: 12)),
-        ],
+      alignment: Alignment.center,
+      child: Text(
+        letter,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 36,
+          fontWeight: FontWeight.w700,
+          letterSpacing: .5,
+        ),
       ),
-    );
-  }
-}
-
-class _KV extends StatelessWidget {
-  final String label;
-  final String value;
-  const _KV({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54)),
-        const SizedBox(height: 4),
-        Text(value),
-      ],
     );
   }
 }
