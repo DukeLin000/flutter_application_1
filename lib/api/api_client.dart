@@ -1,9 +1,8 @@
-// lib/api/api_client.dart
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
+import 'package:http_parser/http_parser.dart'; // ✅ 必須加入這個才能使用 MediaType
 
 /// Login 前：先呼叫 `preflight(baseUrl)`
 /// Login 成功：`boot(baseUrl: ..., token: ...)` 或先 boot 再 `setToken(token)`
@@ -15,8 +14,8 @@ class ApiClient {
   static String get _defaultBaseUrl {
     const fromEnv = String.fromEnvironment('API_BASE_URL');
     if (fromEnv.isNotEmpty) return fromEnv;
-    if (kIsWeb) return 'http://localhost:8088'; // ← Web 預設 8088
-    return 'http://10.0.2.2:8088';              // ← Android 模擬器連本機 8088
+    if (kIsWeb) return 'http://localhost:8088'; // Web 預設
+    return 'http://10.0.2.2:8088';              // Android 模擬器
   }
 
   static const String _apiBasePath = '/api';
@@ -72,7 +71,7 @@ class ApiClient {
     );
   }
 
-  // 供 preflight 使用：不改動目前 instance baseUrl 的情況下組 URI
+  // 供 preflight 使用
   Uri _composeUri(String baseUrl, String path, [Map<String, dynamic>? query]) {
     final b = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
     final p = path.startsWith('/') ? path : '/$path';
@@ -91,30 +90,69 @@ class ApiClient {
     final text = resp.bodyBytes.isNotEmpty ? utf8.decode(resp.bodyBytes) : '';
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
       if (text.isEmpty) return <String, dynamic>{};
-      final decoded = jsonDecode(text);
-      if (decoded is Map<String, dynamic>) return decoded;
-      return {'data': decoded};
+      try {
+        final decoded = jsonDecode(text);
+        if (decoded is Map<String, dynamic>) return decoded;
+        return {'data': decoded};
+      } catch (e) {
+        return {};
+      }
     }
     throw ApiException(resp.statusCode, text.isEmpty ? 'HTTP ${resp.statusCode}' : text);
   }
 
+  // ✅ 關鍵修正：支援 Spring Boot PageImpl 的 JSON 格式
   List<dynamic> _decodeList(http.Response resp) {
     final text = resp.bodyBytes.isNotEmpty ? utf8.decode(resp.bodyBytes) : '';
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
       if (text.isEmpty) return <dynamic>[];
-      final decoded = jsonDecode(text);
-      if (decoded is List) return decoded;
-      if (decoded is Map && decoded['data'] is List) return decoded['data'] as List;
-      return <dynamic>[];
+      try {
+        final decoded = jsonDecode(text);
+        
+        // 1. 直接是 List
+        if (decoded is List) return decoded;
+        
+        // 2. 是 Map
+        if (decoded is Map) {
+          // Spring Boot Page<T> 結構： { "content": [...], "pageable": ... }
+          if (decoded.containsKey('content') && decoded['content'] is List) {
+            return decoded['content'] as List;
+          }
+          // 一般 API 包裝結構： { "data": [...] }
+          if (decoded.containsKey('data') && decoded['data'] is List) {
+            return decoded['data'] as List;
+          }
+        }
+        return <dynamic>[];
+      } catch (e) {
+        return <dynamic>[];
+      }
     }
     throw ApiException(resp.statusCode, text.isEmpty ? 'HTTP ${resp.statusCode}' : text);
   }
 
+  // ---------- Auth (Login/Register) ----------
+  
+  Future<Map<String, dynamic>> login(String email, String password) async {
+    final req = http.Request('POST', _uri('$_apiBasePath/auth/login'))
+      ..headers.addAll(_headersAll())
+      ..body = jsonEncode({'email': email, 'password': password});
+    final resp = await _send(req);
+    return _decodeMap(resp);
+  }
+
+  Future<Map<String, dynamic>> register(String email, String password, String displayName) async {
+    final req = http.Request('POST', _uri('$_apiBasePath/auth/register'))
+      ..headers.addAll(_headersAll())
+      ..body = jsonEncode({'email': email, 'password': password, 'displayName': displayName});
+    final resp = await _send(req);
+    return _decodeMap(resp);
+  }
+
   // ---------- Preflight / Health ----------
-  /// 登入前健康檢查：優先打 /api/profile/ping；再回退 /api/health → /actuator/health → /health
   Future<PreflightResult> preflight(String baseUrl) async {
     final candidates = <String>[
-      '$_apiBasePath/profile', // ← 對應 ProfileController#ping
+      '$_apiBasePath/profile/ping', 
       '$_apiBasePath/health',
       '/actuator/health',
       '/health',
@@ -123,7 +161,7 @@ class ApiClient {
     for (final p in candidates) {
       try {
         final req = http.Request('GET', _composeUri(baseUrl, p))
-          ..headers.addAll(_headersAll());
+          ..headers.addAll(_baseHeaders); 
         final resp = await _send(req);
         if (resp.statusCode >= 200 && resp.statusCode < 300) {
           return PreflightResult(true, 'ok($p)');
@@ -137,9 +175,8 @@ class ApiClient {
     return PreflightResult(false, lastDetail);
   }
 
-  /// App 內健康檢查（用目前 instance baseUrl／Token）
   Future<bool> ping() async {
-    final req = http.Request('GET', _uri('$_apiBasePath/profile/ping')) // ← 改這裡
+    final req = http.Request('GET', _uri('$_apiBasePath/profile/ping'))
       ..headers.addAll(_headersAll());
     try {
       final resp = await _send(req);
@@ -158,9 +195,8 @@ class ApiClient {
     return _decodeMap(resp);
   }
 
-  /// 依照 ID 回讀（支援 "P-1" 或 "1"）
-  Future<Map<String, dynamic>> getProfile(String id) async {
-    final req = http.Request('GET', _uri('$_apiBasePath/profile/$id'))
+  Future<Map<String, dynamic>> getMyProfile() async {
+    final req = http.Request('GET', _uri('$_apiBasePath/profile/me'))
       ..headers.addAll(_headersAll());
     final resp = await _send(req);
     return _decodeMap(resp);
@@ -177,31 +213,25 @@ class ApiClient {
 
   Future<List<dynamic>> listItems({String? category, String? brand}) async {
     final q = <String, dynamic>{};
-    if (category != null) q['category'] = category;
-    if (brand != null) q['brand'] = brand;
-    final req = http.Request('GET', _uri('$_apiBasePath/items', q))..headers.addAll(_headersAll());
+    // ✅ 修正：過濾掉 'all'，避免傳送無效參數給後端
+    if (category != null && category != 'all' && category.isNotEmpty) {
+      q['category'] = category;
+    }
+    if (brand != null && brand.isNotEmpty) {
+      q['brand'] = brand;
+    }
+    
+    final req = http.Request('GET', _uri('$_apiBasePath/items', q))
+      ..headers.addAll(_headersAll());
     final resp = await _send(req);
     return _decodeList(resp);
   }
-
-  Future<Map<String, dynamic>> getItem(int id) async {
-    final req = http.Request('GET', _uri('$_apiBasePath/items/$id'))..headers.addAll(_headersAll());
-    final resp = await _send(req);
-    return _decodeMap(resp);
-  }
-
-  Future<Map<String, dynamic>> updateItem(int id, Map<String, dynamic> patch) async {
-    final req = http.Request('PUT', _uri('$_apiBasePath/items/$id'))
-      ..headers.addAll(_headersAll())
-      ..body = jsonEncode(patch);
-    final resp = await _send(req);
-    return _decodeMap(resp);
-  }
-
-  Future<Map<String, dynamic>> deleteItem(int id) async {
-    final req = http.Request('DELETE', _uri('$_apiBasePath/items/$id'))..headers.addAll(_headersAll());
-    final resp = await _send(req);
-    return _decodeMap(resp);
+  
+  Future<Map<String, dynamic>> deleteItem(String id) async {
+     final req = http.Request('DELETE', _uri('$_apiBasePath/items/$id'))
+       ..headers.addAll(_headersAll());
+     final resp = await _send(req);
+     return _decodeMap(resp);
   }
 
   // ---------- Outfits (穿搭) ----------
@@ -214,61 +244,22 @@ class ApiClient {
   }
 
   Future<List<dynamic>> listOutfits() async {
-    final req = http.Request('GET', _uri('$_apiBasePath/outfits'))..headers.addAll(_headersAll());
+    final req = http.Request('GET', _uri('$_apiBasePath/outfits'))
+      ..headers.addAll(_headersAll());
     final resp = await _send(req);
     return _decodeList(resp);
   }
 
-  Future<Map<String, dynamic>> getOutfit(int id) async {
-    final req = http.Request('GET', _uri('$_apiBasePath/outfits/$id'))..headers.addAll(_headersAll());
-    final resp = await _send(req);
-    return _decodeMap(resp);
-  }
-
-  // ---------- AI / Capsule / Shops ----------
-  Future<Map<String, dynamic>> recommendOutfit({
-    required Map<String, dynamic> profile,
-    required List<dynamic> items,
-  }) async {
-    final body = {'profile': profile, 'items': items};
-    final req = http.Request('POST', _uri('$_apiBasePath/ai/recommend-outfit'))
-      ..headers.addAll(_headersAll())
-      ..body = jsonEncode(body);
-    final resp = await _send(req);
-    return _decodeMap(resp);
-  }
-
-  Future<Map<String, dynamic>> suggestCapsule({String style = 'street'}) async {
-    final req = http.Request('GET', _uri('$_apiBasePath/capsule/suggest', {'style': style}))
-      ..headers.addAll(_headersAll());
-    final resp = await _send(req);
-    return _decodeMap(resp);
-  }
-
-  Future<Map<String, dynamic>> nearbyShops({
-    required double lat,
-    required double lng,
-    int radius = 2000,
-  }) async {
-    final req = http.Request('GET', _uri('$_apiBasePath/shops/nearby', {
-      'lat': lat,
-      'lng': lng,
-      'radius': radius,
-    }))..headers.addAll(_headersAll());
-    final resp = await _send(req);
-    return _decodeMap(resp);
-  }
-
-  // ---------- Upload（bytes 版） ----------
+  // ---------- Upload (圖片上傳) ----------
   Future<Map<String, dynamic>> uploadImageBytes(
     Uint8List bytes, {
     required String filename,
-    String contentType = 'application/octet-stream',
+    String contentType = 'image/jpeg',
   }) async {
-    final uri = _uri('$_apiBasePath/uploads/image');
+    final uri = _uri('$_apiBasePath/files'); // ✅ 修正為 /api/files
     final req = http.MultipartRequest('POST', uri);
-    // 加上授權表頭（若有）
     req.headers.addAll(_headersAll());
+    
     req.files.add(
       http.MultipartFile.fromBytes(
         'file',
@@ -291,7 +282,6 @@ class ApiException implements Exception {
   String toString() => 'ApiException($statusCode): $message';
 }
 
-/// Preflight 結果（登入前健康檢查）
 class PreflightResult {
   final bool ok;
   final String detail;
