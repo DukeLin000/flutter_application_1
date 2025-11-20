@@ -1,19 +1,18 @@
-// lib/pages/wardrobe_page.dart
+// lib/page/wardrobe_page.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
-
-// ⬇️ 把路徑換成你的實際位置：lib/widgets/add_item_dialog.dart
+import 'package:flutter_application_1/api/api_client.dart'; // ✅ 引入 API Client
 import 'package:flutter_application_1/widgets/ui/add_item_dialog.dart' as adddlg;
 
 /// ---------------------------------------------------------------------------
-/// Model + Mock Data (本頁用的輕量模型；新增時會由 add_item_dialog 的資料轉換而來)
+/// Model (對接後端 DTO)
 /// ---------------------------------------------------------------------------
 class ClothingItem {
   final String id;
-  final String category; // 'top' | 'bottom' | 'outerwear' | 'shoes' | 'accessory'
+  final String category;    // 'top' | 'bottom' | ... (前端習慣小寫)
   final String subCategory; // 針織衫、工裝褲...
   final String? brand;
-  final String imageUrl; // 可是 http(s) 或 data:image/...;base64,XXXX
+  final String imageUrl;    // http url
   final List<String> tags;
 
   ClothingItem({
@@ -24,21 +23,24 @@ class ClothingItem {
     this.imageUrl = '',
     this.tags = const [],
   });
+
+  // ✅ Factory: 解析後端 JSON
+  factory ClothingItem.fromJson(Map<String, dynamic> json) {
+    return ClothingItem(
+      id: json['id'].toString(),
+      // 後端 Enum 通常是大寫 (TOP)，前端 UI 邏輯目前用小寫 (top)
+      category: json['category']?.toString().toLowerCase() ?? 'top',
+      // 後端 DTO 有 subCategory 也有 name，優先用 subCategory
+      subCategory: json['subCategory'] ?? json['name'] ?? '',
+      brand: json['brand'],
+      imageUrl: json['imageUrl'] ?? '',
+      tags: (json['tags'] as List?)?.map((e) => e.toString()).toList() ?? [],
+    );
+  }
 }
 
-final List<ClothingItem> mockClothingItems = [
-  ClothingItem(id: '1', category: 'top', subCategory: '針織衫', brand: 'Uniqlo', tags: ['春秋', '休閒']),
-  ClothingItem(id: '2', category: 'bottom', subCategory: '直筒褲', brand: 'GU', tags: ['上班', '百搭']),
-  ClothingItem(id: '3', category: 'outerwear', subCategory: '機能外套', brand: 'H&M', tags: ['防風', '戶外']),
-  ClothingItem(id: '4', category: 'shoes', subCategory: '運動鞋', brand: 'Nike', tags: ['運動', '街頭']),
-  ClothingItem(id: '5', category: 'top', subCategory: '襯衫', brand: 'ZARA', tags: ['正式', '夏']),
-  ClothingItem(id: '6', category: 'bottom', subCategory: '工裝褲', brand: 'Carhartt', tags: ['街頭']),
-  ClothingItem(id: '7', category: 'outerwear', subCategory: '西裝外套', brand: 'ZARA', tags: ['上班']),
-  ClothingItem(id: '8', category: 'shoes', subCategory: '樂福鞋', brand: 'Dr. Martens', tags: ['上班', '正式']),
-];
-
 /// ---------------------------------------------------------------------------
-/// RWD WardrobePage (Web / iPhone 全系列 / Android 各尺寸)
+/// RWD WardrobePage
 /// ---------------------------------------------------------------------------
 class WardrobePage extends StatefulWidget {
   const WardrobePage({super.key});
@@ -49,22 +51,108 @@ class WardrobePage extends StatefulWidget {
 
 class _WardrobePageState extends State<WardrobePage> {
   String viewMode = 'grid'; // grid | list
-  late List<ClothingItem> items;
+  List<ClothingItem> items = []; // ✅ 預設為空，等待 API 載入
   String selectedCategory = 'all';
+  bool _isLoading = false; // ✅ 載入狀態
 
   @override
   void initState() {
     super.initState();
-    items = List.of(mockClothingItems);
+    _fetchItems(); // ✅ 啟動時載入資料
+  }
+
+  // ------------------ API Actions ------------------
+
+  // 1. 從後端讀取列表
+  Future<void> _fetchItems() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    
+    try {
+      // 呼叫 API (ApiClient 會自動處理 Token)
+      // 你也可以傳入 category 參數讓後端篩選，這裡先示範前端篩選
+      final list = await ApiClient.I.listItems();
+      
+      if (!mounted) return;
+      setState(() {
+        items = list.map((json) => ClothingItem.fromJson(json)).toList();
+      });
+    } catch (e) {
+      if (mounted) _snack('載入失敗: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // 2. 新增衣物 (上傳圖片 + 建立資料)
+  Future<void> _addItem() async {
+    // 1) 開啟對話框取得使用者輸入
+    final raw = await adddlg.showAddItemDialog(context);
+    if (raw == null) return;
+
+    setState(() => _isLoading = true);
+    
+    try {
+      String finalImageUrl = raw.imageUrl;
+
+      // 2) 如果有選圖片檔案，先上傳
+      if (raw.imageBytes != null) {
+        final filename = 'upload_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final uploadRes = await ApiClient.I.uploadImageBytes(
+          raw.imageBytes!,
+          filename: filename,
+        );
+        // 後端回傳 { "url": "http://...", ... }
+        finalImageUrl = uploadRes['url'];
+      }
+
+      // 3) 組裝資料呼叫後端建立 API
+      final body = {
+        'category': raw.category.name.toUpperCase(), // 後端 Enum 需要大寫
+        'subCategory': raw.subCategory,
+        'brand': raw.brand,
+        'color': raw.color.isNotEmpty ? raw.color.first : null,
+        'season': raw.season.map((e) => e.name.toUpperCase()).toList(),
+        'occasion': raw.occasion.map((e) => e.name.toUpperCase()).toList(),
+        'fit': raw.fit.name.toUpperCase(),
+        'tags': raw.tags,
+        'favorite': raw.isFavorite,
+        'imageUrl': finalImageUrl,
+        'waterproof': raw.waterproof,
+        'warmth': raw.warmth,
+        'breathability': raw.breathability,
+      };
+
+      await ApiClient.I.createItem(body);
+      
+      if (mounted) {
+        _snack('新增成功');
+        _fetchItems(); // ✅ 成功後重新整理列表
+      }
+    } catch (e) {
+      if (mounted) _snack('新增失敗: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _snack(String msg, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg), 
+        backgroundColor: isError ? Colors.red : null,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   // ------------------ RWD helpers ------------------
   double _containerMaxWidth(double w) {
-    if (w >= 1600) return 1200; // very wide desktop
-    if (w >= 1200) return 1100; // desktop
-    if (w >= 900) return 900;   // tablet
-    if (w >= 600) return 760;   // small tablet / landscape phone
-    return w - 24;              // phone portrait gutters
+    if (w >= 1600) return 1200;
+    if (w >= 1200) return 1100;
+    if (w >= 900) return 900;
+    if (w >= 600) return 760;
+    return w - 24;
   }
 
   int _gridCols(double w) {
@@ -95,33 +183,6 @@ class _WardrobePageState extends State<WardrobePage> {
   List<ClothingItem> get _filteredItems =>
       selectedCategory == 'all' ? items : items.where((i) => i.category == selectedCategory).toList();
 
-  // ------------------ Mapping：add_item_dialog -> 本頁模型 ------------------
-  String _catToStr(adddlg.Category c) {
-    switch (c) {
-      case adddlg.Category.top:
-        return 'top';
-      case adddlg.Category.bottom:
-        return 'bottom';
-      case adddlg.Category.outerwear:
-        return 'outerwear';
-      case adddlg.Category.shoes:
-        return 'shoes';
-      case adddlg.Category.accessory:
-        return 'accessory';
-    }
-    // 保底（避免分析器判斷「可能未回傳」）
-    return 'top';
-  }
-
-  ClothingItem _mapFromDialog(adddlg.ClothingItem s) => ClothingItem(
-        id: s.id,
-        category: _catToStr(s.category),
-        subCategory: s.subCategory,
-        brand: s.brand,
-        imageUrl: s.imageUrl,
-        tags: s.tags,
-      );
-
   // ------------------ Actions ------------------
   void _openFilter() async {
     await showModalBottomSheet(
@@ -132,17 +193,6 @@ class _WardrobePageState extends State<WardrobePage> {
     );
   }
 
-  Future<void> _addItem() async {
-    final created = await adddlg.showAddItemDialog(context);
-    if (created != null) {
-      setState(() => items.insert(0, _mapFromDialog(created)));
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已新增衣物')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
@@ -151,25 +201,22 @@ class _WardrobePageState extends State<WardrobePage> {
       appBar: AppBar(
         title: const Text('衣櫃管理'),
         actions: [
+          // 手動重新整理按鈕
+          IconButton(onPressed: _fetchItems, icon: const Icon(Icons.refresh)), 
           IconButton(onPressed: () {}, icon: const Icon(Icons.search)),
-          IconButton(onPressed: () {}, icon: const Icon(Icons.settings_outlined)),
         ],
       ),
       body: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: _containerMaxWidth(w)),
-          child: SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(
-              w >= 1200 ? 24 : 16,
-              16,
-              w >= 1200 ? 24 : 16,
-              w >= 1200 ? 24 : 88,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 工具列
-                Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 工具列 (Header)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  w >= 1200 ? 24 : 16, 16, w >= 1200 ? 24 : 16, 0),
+                child: Row(
                   children: [
                     SegmentedButton<String>(
                       segments: const [
@@ -193,61 +240,80 @@ class _WardrobePageState extends State<WardrobePage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+              ),
+              const SizedBox(height: 12),
 
-                // 分類標籤（可水平捲動）
-                SizedBox(
-                  height: 42,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _categories.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (_, i) {
-                      final cat = _categories[i];
-                      final bool active = selectedCategory == cat['id'];
-                      return OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          backgroundColor: active ? Theme.of(context).colorScheme.primary : null,
-                          foregroundColor: active ? Colors.white : null,
-                          side: active ? BorderSide(color: Theme.of(context).colorScheme.primary) : null,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-                        ),
-                        onPressed: () => setState(() => selectedCategory = cat['id'] as String),
-                        child: Text('${cat['label']} (${cat['count']})'),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // 內容
-                if (viewMode == 'grid')
-                  LayoutBuilder(builder: (context, c) {
-                    final cols = _gridCols(c.maxWidth);
-                    return GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: cols,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                        childAspectRatio: _tileAspectRatio(c.maxWidth),
+              // 分類標籤 (Category Filter)
+              SizedBox(
+                height: 42,
+                child: ListView.separated(
+                  padding: EdgeInsets.symmetric(horizontal: w >= 1200 ? 24 : 16),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _categories.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (_, i) {
+                    final cat = _categories[i];
+                    final bool active = selectedCategory == cat['id'];
+                    return OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        backgroundColor: active ? Theme.of(context).colorScheme.primary : null,
+                        foregroundColor: active ? Colors.white : null,
+                        side: active ? BorderSide(color: Theme.of(context).colorScheme.primary) : null,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
                       ),
-                      itemCount: _filteredItems.length,
-                      itemBuilder: (_, i) => _GridCard(item: _filteredItems[i]),
+                      onPressed: () => setState(() => selectedCategory = cat['id'] as String),
+                      child: Text('${cat['label']} (${cat['count']})'),
                     );
-                  })
-                else
-                  ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _filteredItems.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) => _ListCard(item: _filteredItems[i]),
-                  ),
-              ],
-            ),
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // 內容區 (Content)
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : items.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.checkroom_outlined, size: 64, color: Colors.grey),
+                                const SizedBox(height: 16),
+                                Text('目前沒有衣物，請點擊新增', style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.grey)),
+                              ],
+                            ),
+                          )
+                        : SingleChildScrollView(
+                            padding: EdgeInsets.fromLTRB(
+                              w >= 1200 ? 24 : 16, 0, w >= 1200 ? 24 : 16, 88),
+                            child: viewMode == 'grid'
+                              ? LayoutBuilder(builder: (context, c) {
+                                  final cols = _gridCols(c.maxWidth);
+                                  return GridView.builder(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: cols,
+                                      crossAxisSpacing: 12,
+                                      mainAxisSpacing: 12,
+                                      childAspectRatio: _tileAspectRatio(c.maxWidth),
+                                    ),
+                                    itemCount: _filteredItems.length,
+                                    itemBuilder: (_, i) => _GridCard(item: _filteredItems[i]),
+                                  );
+                                })
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  itemCount: _filteredItems.length,
+                                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                                  itemBuilder: (_, i) => _ListCard(item: _filteredItems[i]),
+                                ),
+                          ),
+              ),
+            ],
           ),
         ),
       ),
@@ -274,18 +340,22 @@ class _GridCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item.subCategory, style: t.bodyMedium),
-                if (item.brand != null) ...[
+                Text(item.subCategory, style: t.bodyMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
+                if (item.brand != null && item.brand!.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  Text(item.brand!, style: t.bodySmall?.copyWith(color: Colors.grey[600])),
+                  Text(item.brand!, style: t.bodySmall?.copyWith(color: Colors.grey[600]), maxLines: 1, overflow: TextOverflow.ellipsis),
                 ],
                 const SizedBox(height: 6),
                 Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
+                  spacing: 4,
+                  runSpacing: 4,
                   children: [
                     for (final tag in item.tags.take(2))
-                      Chip(label: Text(tag), visualDensity: VisualDensity.compact)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(4)),
+                        child: Text(tag, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                      )
                   ],
                 ),
               ],

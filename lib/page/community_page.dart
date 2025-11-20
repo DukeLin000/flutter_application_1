@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import 'package:flutter_application_1/api/api_client.dart'; // ✅ 引入 API Client
 
 /// -----------------------------
-/// Models & Mock Data
+/// Models (對接後端)
 /// -----------------------------
-class OutfitItem {final String brand; final String name; const OutfitItem(this.brand, this.name);} 
+class OutfitItem {
+  final String brand; 
+  final String name; 
+  const OutfitItem(this.brand, this.name);
+} 
 
 class Outfit {
   final String id;
@@ -15,6 +20,7 @@ class Outfit {
   final double aspect; // image aspect ratio for masonry variance
   int likes;
   bool isLiked;
+
   Outfit({
     required this.id,
     required this.userName,
@@ -25,58 +31,37 @@ class Outfit {
     this.likes = 0,
     this.isLiked = false,
   });
+
+  // ✅ Factory: 解析後端 OutfitDto JSON
+  factory Outfit.fromJson(Map<String, dynamic> json) {
+    // 後端目前欄位有限，先做簡單映射
+    String notes = json['notes']?.toString() ?? '';
+    if (notes.isEmpty) notes = '分享穿搭 #${json['id']}';
+
+    // TODO: 未來後端應回傳 User 資訊、Items 詳情、Tags 等
+    // 這裡暫時 mock 一些顯示用的資料
+    return Outfit(
+      id: json['id'].toString(),
+      userName: 'User${json['id']}', // 暫時假名
+      description: notes,
+      tags: ['日常', '休閒'], // 暫時假標籤
+      items: [], // 暫時空列表
+      aspect: 1.0, // 圖片比例
+      likes: 0,
+    );
+  }
 }
 
-class Comment {final String user; final String text; const Comment(this.user, this.text);} 
+class Comment {
+  final String user; 
+  final String text; 
+  const Comment(this.user, this.text);
+} 
 
+// 暫時保留假留言資料
 final Map<String, List<Comment>> mockComments = {
   'o1': const [Comment('Allen','外套配色好看!'), Comment('Becky','工裝褲版型不錯')],
-  'o2': const [Comment('Cindy','上班穿這套剛好'), Comment('Davis','針織衫質感讚')],
-  'o3': const [Comment('Erik','顏色超搭'), Comment('Finn','鞋子哪個牌子?')],
-  'o4': const [Comment('Gigi','超喜歡這件大學T')],
 };
-
-final List<Outfit> mockOutfits = [
-  Outfit(
-    id:'o1', userName:'Rio',
-    description:'機能外套 + 寬版褲，抗風又防潑水，今天微涼超適合',
-    tags:['戶外','防潑水','街頭'],
-    items:[const OutfitItem('Arc','Shell'), const OutfitItem('Uniqlo','Wide Pants')],
-    aspect: 4/3, likes: 128,
-  ),
-  Outfit(
-    id:'o2', userName:'Mia',
-    description:'針織衫 + 直筒褲，通勤日常穿搭',
-    tags:['上班族','舒適'],
-    items:[const OutfitItem('COS','Knit'), const OutfitItem('Levis','501')],
-    aspect: 1,
-    likes: 86,
-  ),
-  Outfit(
-    id:'o3', userName:'Ken',
-    description:'連帽T + 工裝褲 + 老帽，休閒街頭感',
-    tags:['街頭','保暖'],
-    items:[const OutfitItem('Carhartt','Hoodie'), const OutfitItem('Dickies','Work Pants')],
-    aspect: 3/4,
-    likes: 205,
-  ),
-  Outfit(
-    id:'o4', userName:'Zoe',
-    description:'襯衫外搭針織背心，內搭白T，簡約層次',
-    tags:['學院','層次'],
-    items:[const OutfitItem('MUJI','Shirt'), const OutfitItem('GU','Vest')],
-    aspect: 0.9,
-    likes: 54,
-  ),
-  Outfit(
-    id:'o5', userName:'Ian',
-    description:'丹寧外套 + 軍綠寬褲，顏色協調',
-    tags:['休閒','丹寧'],
-    items:[const OutfitItem('Levis','Trucker'), const OutfitItem('WTAPS','Wide Cargo')],
-    aspect: 1.2,
-    likes: 73,
-  ),
-];
 
 /// -----------------------------
 /// Community Page (RWD)
@@ -89,15 +74,40 @@ class CommunityPage extends StatefulWidget {
 }
 
 class _CommunityPageState extends State<CommunityPage> {
-  late List<Outfit> outfits;
+  List<Outfit> outfits = []; // ✅ 預設為空
   String activeTab = 'latest';
   String viewMode = 'masonry'; // 'masonry' | 'grid'
   String searchQuery = '';
+  bool _isLoading = false; // ✅ 載入狀態
 
   @override
   void initState() {
     super.initState();
-    outfits = [...mockOutfits];
+    _fetchOutfits(); // ✅ 啟動時載入
+  }
+
+  // 從後端讀取列表
+  Future<void> _fetchOutfits() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    
+    try {
+      final list = await ApiClient.I.listOutfits();
+      
+      if (!mounted) return;
+      setState(() {
+        outfits = list.map((json) => Outfit.fromJson(json)).toList();
+      });
+    } catch (e) {
+      // debugPrint('Community fetch error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('載入失敗: $e'), behavior: SnackBarBehavior.floating),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   // ------------------ RWD helpers ------------------
@@ -128,6 +138,7 @@ class _CommunityPageState extends State<CommunityPage> {
         final o = outfits[idx];
         o.isLiked = !o.isLiked;
         o.likes += o.isLiked ? 1 : -1;
+        // TODO: 呼叫後端 API 更新按讚狀態
       }
     });
   }
@@ -196,6 +207,8 @@ class _CommunityPageState extends State<CommunityPage> {
                 const SizedBox(height: 8),
                 const Text('留言', style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
+                if (comments.isEmpty)
+                  const Padding(padding: EdgeInsets.all(16), child: Text('尚無留言', style: TextStyle(color: Colors.grey))),
                 for (final c in comments) _CommentTile(c),
                 const SizedBox(height: 24),
               ],
@@ -220,10 +233,10 @@ class _CommunityPageState extends State<CommunityPage> {
 
   List<Outfit> get _display {
     final list = [..._filtered];
+    // 暫時只做簡單排序，後端尚未支援 trending 排序
     if (activeTab == 'trending') {
       list.sort((a, b) => b.likes.compareTo(a.likes));
     }
-    // following: demo同 latest
     return list;
   }
 
@@ -237,6 +250,11 @@ class _CommunityPageState extends State<CommunityPage> {
       appBar: AppBar(
         title: const Text('穿搭社群'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh), 
+            onPressed: _fetchOutfits, // 手動刷新
+            tooltip: '重新整理',
+          ),
           IconButton(icon: const Icon(Icons.search), onPressed: () async {
             final q = await showSearch<String?>(
             context: context,
@@ -247,11 +265,16 @@ class _CommunityPageState extends State<CommunityPage> {
           );
             if (q != null) setState(() => searchQuery = q);
           }),
-          IconButton(icon: const Icon(Icons.add), onPressed: (){}),
+          IconButton(icon: const Icon(Icons.add), onPressed: (){
+            // TODO: 實作新增穿搭功能 (需要先有衣物選擇器)
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('新增穿搭功能開發中')));
+          }),
           IconButton(icon: const Icon(Icons.settings_outlined), onPressed: (){}),
         ],
       ),
-      body: Center(
+      body: _isLoading 
+        ? const Center(child: CircularProgressIndicator())
+        : Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: _containerMaxWidth(w)),
           child: SingleChildScrollView(
@@ -325,8 +348,13 @@ class _CommunityPageState extends State<CommunityPage> {
                   ),
                 if (!isLg) const SizedBox(height: 12),
 
-                // Grid / Masonry
-                if (viewMode == 'masonry')
+                // 內容區
+                if (outfits.isEmpty)
+                   const Padding(
+                     padding: EdgeInsets.all(40.0),
+                     child: Center(child: Text('暫無穿搭分享')),
+                   )
+                else if (viewMode == 'masonry')
                   MasonryGridView.count(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -358,7 +386,7 @@ class _CommunityPageState extends State<CommunityPage> {
                     ),
                   ),
 
-                if (_display.isEmpty)
+                if (_display.isEmpty && outfits.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 40),
                     child: Center(
@@ -601,4 +629,3 @@ class _OutfitSearchDelegate extends SearchDelegate<String?> {
     );
   }
 }
-

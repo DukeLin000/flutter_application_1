@@ -1,62 +1,220 @@
+// lib/page/home_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/api_client.dart'; // ✅ 引入 API Client
 
-/// Simple mock outfit model (mirrors your mockOutfits intent)
+/// ---------------------------------------------------------------------------
+/// Model (對接後端 OutfitDto)
+/// ---------------------------------------------------------------------------
 class Outfit {
   final String id;
   final String title;
   final String subtitle; // e.g. weather, temp
   final List<String> tags; // e.g. style chips
-  Outfit({required this.id, required this.title, required this.subtitle, this.tags = const []});
+
+  Outfit({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    this.tags = const [],
+  });
+
+  // ✅ Factory: 解析後端 JSON
+  // 後端 OutfitDto: { id, notes, topId, ... }
+  factory Outfit.fromJson(Map<String, dynamic> json) {
+    // 簡單邏輯：如果有 notes 就當標題，沒有就顯示預設
+    String notes = json['notes']?.toString() ?? '';
+    if (notes.isEmpty) notes = '我的穿搭 #${json['id']}';
+    
+    return Outfit(
+      id: json['id'].toString(),
+      title: notes,
+      // 暫時寫死，因為後端還沒回傳天氣資訊
+      subtitle: '24°C · 舒適', 
+      // 暫時寫死，後端還沒回傳 tags
+      tags: ['休閒', '日常'], 
+    );
+  }
 }
 
-/// Demo data (replace with your real mockOutfits)
-final List<Outfit> mockOutfits = [
-  Outfit(id: 'o1', title: '機能外套 + 寬版褲', subtitle: '18°·微風', tags: ['戶外', '防潑水']),
-  Outfit(id: 'o2', title: '針織衫 + 直筒褲', subtitle: '21°·舒適', tags: ['上班族', '休閒']),
-  Outfit(id: 'o3', title: '連帽T + 工裝褲', subtitle: '16°·偶陣雨', tags: ['街頭', '保暖']),
-];
-
-class HomePage extends StatelessWidget {
-  const HomePage({super.key, required this.hasItems, required this.onAddItems});
+/// ---------------------------------------------------------------------------
+/// HomePage
+/// ---------------------------------------------------------------------------
+class HomePage extends StatefulWidget {
+  const HomePage({
+    super.key, 
+    required this.hasItems, // TODO: 這個參數未來可以改由 API 判斷
+    required this.onAddItems
+  });
 
   final bool hasItems;
   final VoidCallback onAddItems;
 
-  // ----- RWD helpers -------------------------------------------------------
-  double _containerMaxWidth(double w) {
-    if (w >= 1600) return 1400; // very wide desktop
-    if (w >= 1200) return 1200; // desktop
-    if (w >= 900) return 980;   // tablets / large phones landscape
-    if (w >= 600) return 760;   // small tablets / phones landscape
-    return w - 24;              // phones portrait: leave gutters
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  List<Outfit> outfits = [];
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchOutfits(); // ✅ 啟動時載入
   }
 
-  int _gridCols(double w) {
-    if (w >= 1200) return 3; // lg
-    if (w >= 900) return 2;  // md
-    return 1;                // sm
+  Future<void> _fetchOutfits() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    
+    try {
+      // 呼叫後端 API
+      final list = await ApiClient.I.listOutfits();
+      
+      if (!mounted) return;
+      setState(() {
+        outfits = list.map((json) => Outfit.fromJson(json)).toList();
+      });
+    } catch (e) {
+      // 暫時不跳錯，因為剛開始可能還沒建立任何穿搭
+      // debugPrint('Home fetch error: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
-  bool _isLarge(double w) => w >= 1200;
+  // 模擬重新生成 (實際上是重新撈取列表)
+  void _handleRefresh() {
+    _snack('正在更新穿搭建議...');
+    _fetchOutfits();
+  }
 
-  // ----- Snack helpers (cross-platform toasts) ----------------------------
-  void _snack(BuildContext context, String msg) {
+  void _handleSave(String id) => _snack('穿搭已儲存到收藏');
+  void _handleShare(String id) => _snack('穿搭分享連結已複製');
+
+  void _snack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
     );
   }
 
-  void _handleSave(BuildContext ctx, String id) => _snack(ctx, '穿搭已儲存到收藏');
-  void _handleShare(BuildContext ctx, String id) => _snack(ctx, '穿搭分享連結已複製');
-  void _handleRefresh(BuildContext ctx) => _snack(ctx, '正在重新生成穿搭建議...');
+  // ----- RWD helpers -----
+  double _containerMaxWidth(double w) {
+    if (w >= 1600) return 1400;
+    if (w >= 1200) return 1200;
+    if (w >= 900) return 980;
+    if (w >= 600) return 760;
+    return w - 24;
+  }
+
+  int _gridCols(double w) {
+    if (w >= 1200) return 3;
+    if (w >= 900) return 2;
+    return 1;
+  }
+
+  bool _isLarge(double w) => w >= 1200;
 
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
     final isLarge = _isLarge(w);
 
-    if (!hasItems) {
-      return Scaffold(
+    // 如果後端完全沒資料，且 hasItems 為 false (雖然這參數目前由上層傳入)，顯示 EmptyState
+    // 這裡我們先簡單判斷：如果 loading 結束且 outfits 為空，顯示 EmptyState
+    if (!_isLoading && outfits.isEmpty && !widget.hasItems) {
+       return _buildEmptyState(w, isLarge);
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('每日穿搭建議'),
+        actions: [
+          if (!isLarge)
+            IconButton(
+              tooltip: '重新生成',
+              onPressed: _handleRefresh,
+              icon: const Icon(Icons.shuffle_rounded),
+            ),
+          const _SettingsButton(),
+        ],
+      ),
+      body: _isLoading 
+          ? const Center(child: CircularProgressIndicator()) 
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final maxW = _containerMaxWidth(w);
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxW),
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(isLarge ? 24 : 16, 16, isLarge ? 24 : 16, isLarge ? 24 : 88),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // 天氣資訊
+                          const WeatherBar(),
+                          const SizedBox(height: 16),
+
+                          // 桌面版統計卡片
+                          if (isLarge) _DesktopStats(),
+
+                          // 標題列
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const _TitleWithSub(
+                                title: '今日推薦穿搭',
+                                subtitle: '來自你的衣櫃與 AI 建議',
+                              ),
+                              if (isLarge)
+                                OutlinedButton.icon(
+                                  onPressed: _handleRefresh,
+                                  icon: const Icon(Icons.shuffle_rounded, size: 18),
+                                  label: const Text('重新生成'),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // 內容區
+                          if (outfits.isEmpty)
+                             const Padding(
+                               padding: EdgeInsets.all(32.0),
+                               child: Center(child: Text('暫無穿搭建議，請先到衣櫃新增單品')),
+                             )
+                          else
+                            GridView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: _gridCols(w),
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 16,
+                                childAspectRatio: 4/3,
+                              ),
+                              itemCount: outfits.length,
+                              itemBuilder: (context, i) {
+                                final o = outfits[i];
+                                return OutfitRecommendCard(
+                                  outfit: o,
+                                  onSave: () => _handleSave(o.id),
+                                  onShare: () => _handleShare(o.id),
+                                );
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _buildEmptyState(double w, bool isLarge) {
+     return Scaffold(
         appBar: AppBar(title: const Text('每日出裝'), actions: const [_SettingsButton()]),
         body: Center(
           child: ConstrainedBox(
@@ -68,96 +226,17 @@ class HomePage extends StatelessWidget {
                 title: '尚未建立衣櫃',
                 description: '新增衣服單品，開始使用 AI 智能穿搭功能',
                 actionLabel: '前往衣櫃',
-                onAction: onAddItems,
+                onAction: widget.onAddItems,
               ),
             ),
           ),
         ),
       );
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('每日穿搭建議'),
-        actions: [
-          if (!isLarge)
-            IconButton(
-              tooltip: '重新生成',
-              onPressed: () => _handleRefresh(context),
-              icon: const Icon(Icons.shuffle_rounded),
-            ),
-          const _SettingsButton(),
-        ],
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final maxW = _containerMaxWidth(w);
-          return Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxW),
-              child: SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(isLarge ? 24 : 16, 16, isLarge ? 24 : 16, isLarge ? 24 : 88),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // 天氣資訊
-                    const WeatherBar(),
-                    const SizedBox(height: 16),
-
-                    // 桌面版統計卡片（僅 lg 顯示）
-                    if (isLarge) _DesktopStats(),
-
-                    // 每日推薦標題 + 重新生成（桌面顯示按鈕；小螢幕移到 AppBar）
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const _TitleWithSub(
-                          title: '今日推薦穿搭',
-                          subtitle: '根據天氣、你的風格偏好和衣櫃單品，為你推薦 3 套穿搭',
-                        ),
-                        if (isLarge)
-                          OutlinedButton.icon(
-                            onPressed: () => _handleRefresh(context),
-                            icon: const Icon(Icons.shuffle_rounded, size: 18),
-                            label: const Text('重新生成'),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // 推薦穿搭卡片
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: _gridCols(w),
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
-                        childAspectRatio: 4/3,
-                      ),
-                      itemCount: mockOutfits.length,
-                      itemBuilder: (context, i) {
-                        final o = mockOutfits[i];
-                        return OutfitRecommendCard(
-                          outfit: o,
-                          onSave: () => _handleSave(context, o.id),
-                          onShare: () => _handleShare(context, o.id),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
   }
 }
 
 // ---------------------------------------------------------------------------
-// Widgets (drop-in replacements for your React components)
+// Widgets
 // ---------------------------------------------------------------------------
 
 class _SettingsButton extends StatelessWidget {
@@ -255,7 +334,7 @@ class OutfitRecommendCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Image placeholder
+          // Image placeholder (這裡未來要顯示穿搭組合圖)
           Expanded(
             child: Container(
               decoration: const BoxDecoration(

@@ -2,20 +2,29 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart'; // ✅ 必須加入這個才能使用 MediaType
+import 'package:http_parser/http_parser.dart';
 
-/// Login 前：先呼叫 `preflight(baseUrl)`
-/// Login 成功：`boot(baseUrl: ..., token: ...)` 或先 boot 再 `setToken(token)`
 class ApiClient {
   ApiClient._internal({String? baseUrl}) : _baseUrl = baseUrl ?? _defaultBaseUrl;
   static final ApiClient I = ApiClient._internal();
 
-  // ---- Base URL ----
+  // ---- Base URL 設定 (修正版) ----
   static String get _defaultBaseUrl {
+    // 1. 如果編譯時有指定 --dart-define=API_BASE_URL=... 則優先使用
     const fromEnv = String.fromEnvironment('API_BASE_URL');
     if (fromEnv.isNotEmpty) return fromEnv;
-    if (kIsWeb) return 'http://localhost:8088'; // Web 預設
-    return 'http://10.0.2.2:8088';              // Android 模擬器
+
+    // 2. Web 環境
+    if (kIsWeb) return 'http://localhost:8088';
+
+    // 3. 根據作業系統決定 (iOS/macOS 用 localhost，Android 用 10.0.2.2)
+    if (defaultTargetPlatform == TargetPlatform.iOS || 
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      return 'http://localhost:8088';
+    }
+
+    // 4. 預設為 Android 模擬器位址
+    return 'http://10.0.2.2:8088';
   }
 
   static const String _apiBasePath = '/api';
@@ -24,7 +33,6 @@ class ApiClient {
   String get baseUrl => _baseUrl;
   void setBaseUrl(String url) => _baseUrl = url;
 
-  // ---- Auth / Ready 狀態 ----
   String? _authToken;
   bool _ready = false;
   bool get isReady => _ready;
@@ -35,25 +43,16 @@ class ApiClient {
     _ready = true;
   }
 
-  void setToken(String token) {
-    _authToken = token;
-  }
+  void setToken(String token) => _authToken = token;
+  void logout() { _authToken = null; _ready = false; }
 
-  void logout() {
-    _authToken = null;
-    _ready = false;
-  }
-
-  // ---- Timeout / Headers ----
   final _timeout = const Duration(seconds: 15);
 
-  // 基礎表頭（不含授權）
   final Map<String, String> _baseHeaders = const {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   };
 
-  // 動態表頭：自動帶上 Authorization（若已登入）
   Map<String, String> _headersAll([Map<String, String>? extra]) {
     final h = Map<String, String>.of(_baseHeaders);
     if (_authToken != null && _authToken!.isNotEmpty) {
@@ -71,7 +70,6 @@ class ApiClient {
     );
   }
 
-  // 供 preflight 使用
   Uri _composeUri(String baseUrl, String path, [Map<String, dynamic>? query]) {
     final b = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
     final p = path.startsWith('/') ? path : '/$path';
@@ -80,7 +78,6 @@ class ApiClient {
     );
   }
 
-  // ---------- 低階傳送與解碼 ----------
   Future<http.Response> _send(http.BaseRequest request) async {
     final streamed = await request.send().timeout(_timeout);
     return http.Response.fromStream(streamed);
@@ -101,24 +98,17 @@ class ApiClient {
     throw ApiException(resp.statusCode, text.isEmpty ? 'HTTP ${resp.statusCode}' : text);
   }
 
-  // ✅ 關鍵修正：支援 Spring Boot PageImpl 的 JSON 格式
   List<dynamic> _decodeList(http.Response resp) {
     final text = resp.bodyBytes.isNotEmpty ? utf8.decode(resp.bodyBytes) : '';
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
       if (text.isEmpty) return <dynamic>[];
       try {
         final decoded = jsonDecode(text);
-        
-        // 1. 直接是 List
         if (decoded is List) return decoded;
-        
-        // 2. 是 Map
         if (decoded is Map) {
-          // Spring Boot Page<T> 結構： { "content": [...], "pageable": ... }
           if (decoded.containsKey('content') && decoded['content'] is List) {
             return decoded['content'] as List;
           }
-          // 一般 API 包裝結構： { "data": [...] }
           if (decoded.containsKey('data') && decoded['data'] is List) {
             return decoded['data'] as List;
           }
@@ -131,8 +121,7 @@ class ApiClient {
     throw ApiException(resp.statusCode, text.isEmpty ? 'HTTP ${resp.statusCode}' : text);
   }
 
-  // ---------- Auth (Login/Register) ----------
-  
+  // ---------- Auth ----------
   Future<Map<String, dynamic>> login(String email, String password) async {
     final req = http.Request('POST', _uri('$_apiBasePath/auth/login'))
       ..headers.addAll(_headersAll())
@@ -149,10 +138,10 @@ class ApiClient {
     return _decodeMap(resp);
   }
 
-  // ---------- Preflight / Health ----------
+  // ---------- Preflight ----------
   Future<PreflightResult> preflight(String baseUrl) async {
     final candidates = <String>[
-      '$_apiBasePath/profile/ping', 
+      '$_apiBasePath/profile/ping',
       '$_apiBasePath/health',
       '/actuator/health',
       '/health',
@@ -161,7 +150,7 @@ class ApiClient {
     for (final p in candidates) {
       try {
         final req = http.Request('GET', _composeUri(baseUrl, p))
-          ..headers.addAll(_baseHeaders); 
+          ..headers.addAll(_baseHeaders);
         final resp = await _send(req);
         if (resp.statusCode >= 200 && resp.statusCode < 300) {
           return PreflightResult(true, 'ok($p)');
@@ -202,7 +191,7 @@ class ApiClient {
     return _decodeMap(resp);
   }
 
-  // ---------- Items (衣櫃 CRUD) ----------
+  // ---------- Items ----------
   Future<Map<String, dynamic>> createItem(Map<String, dynamic> item) async {
     final req = http.Request('POST', _uri('$_apiBasePath/items'))
       ..headers.addAll(_headersAll())
@@ -213,7 +202,6 @@ class ApiClient {
 
   Future<List<dynamic>> listItems({String? category, String? brand}) async {
     final q = <String, dynamic>{};
-    // ✅ 修正：過濾掉 'all'，避免傳送無效參數給後端
     if (category != null && category != 'all' && category.isNotEmpty) {
       q['category'] = category;
     }
@@ -221,20 +209,18 @@ class ApiClient {
       q['brand'] = brand;
     }
     
-    final req = http.Request('GET', _uri('$_apiBasePath/items', q))
-      ..headers.addAll(_headersAll());
+    final req = http.Request('GET', _uri('$_apiBasePath/items', q))..headers.addAll(_headersAll());
     final resp = await _send(req);
     return _decodeList(resp);
   }
   
   Future<Map<String, dynamic>> deleteItem(String id) async {
-     final req = http.Request('DELETE', _uri('$_apiBasePath/items/$id'))
-       ..headers.addAll(_headersAll());
+     final req = http.Request('DELETE', _uri('$_apiBasePath/items/$id'))..headers.addAll(_headersAll());
      final resp = await _send(req);
      return _decodeMap(resp);
   }
 
-  // ---------- Outfits (穿搭) ----------
+  // ---------- Outfits ----------
   Future<Map<String, dynamic>> createOutfit(Map<String, dynamic> outfit) async {
     final req = http.Request('POST', _uri('$_apiBasePath/outfits'))
       ..headers.addAll(_headersAll())
@@ -244,19 +230,18 @@ class ApiClient {
   }
 
   Future<List<dynamic>> listOutfits() async {
-    final req = http.Request('GET', _uri('$_apiBasePath/outfits'))
-      ..headers.addAll(_headersAll());
+    final req = http.Request('GET', _uri('$_apiBasePath/outfits'))..headers.addAll(_headersAll());
     final resp = await _send(req);
     return _decodeList(resp);
   }
 
-  // ---------- Upload (圖片上傳) ----------
+  // ---------- Upload ----------
   Future<Map<String, dynamic>> uploadImageBytes(
     Uint8List bytes, {
     required String filename,
     String contentType = 'image/jpeg',
   }) async {
-    final uri = _uri('$_apiBasePath/files'); // ✅ 修正為 /api/files
+    final uri = _uri('$_apiBasePath/files'); 
     final req = http.MultipartRequest('POST', uri);
     req.headers.addAll(_headersAll());
     
