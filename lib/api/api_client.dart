@@ -235,6 +235,49 @@ class ApiClient {
     return _decodeList(resp);
   }
 
+  // ---------- Outfits (Extended: Like & Unlike) ----------
+
+  // 新增：按讚
+  Future<void> likeOutfit(String id) async {
+    final req = http.Request('POST', _uri('$_apiBasePath/outfits/$id/like'))
+      ..headers.addAll(_headersAll());
+    final resp = await _send(req);
+    // 200-299 視為成功，否則拋出異常
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw ApiException(resp.statusCode, '按讚失敗');
+    }
+  }
+
+  // 新增：取消按讚
+  Future<void> unlikeOutfit(String id) async {
+    final req = http.Request('DELETE', _uri('$_apiBasePath/outfits/$id/like'))
+      ..headers.addAll(_headersAll());
+    final resp = await _send(req);
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw ApiException(resp.statusCode, '取消按讚失敗');
+    }
+  }
+
+  // ---------- Comments (New) ----------
+
+  // 新增：取得留言列表
+  Future<List<dynamic>> getComments(String outfitId) async {
+    final req = http.Request('GET', _uri('$_apiBasePath/outfits/$outfitId/comments'))
+      ..headers.addAll(_headersAll());
+    final resp = await _send(req);
+    return _decodeList(resp);
+  }
+
+  // 新增：發送留言
+  Future<Map<String, dynamic>> postComment(String outfitId, String text) async {
+    final req = http.Request('POST', _uri('$_apiBasePath/outfits/$outfitId/comments'))
+      ..headers.addAll(_headersAll())
+      // 假設後端接收的 JSON 欄位為 "content"
+      ..body = jsonEncode({'content': text}); 
+    final resp = await _send(req);
+    return _decodeMap(resp);
+  }
+
   // ---------- Upload ----------
   Future<Map<String, dynamic>> uploadImageBytes(
     Uint8List bytes, {
