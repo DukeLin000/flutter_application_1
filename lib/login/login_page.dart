@@ -132,7 +132,7 @@ class _LoginPageState extends State<LoginPage> {
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+                end: Alignment.bottomRight, 
                 colors: [Color(0xFFEFF6FF), Color(0xFFEEF2FF), Color(0xFFF3E8FF)],
               ),
             ),

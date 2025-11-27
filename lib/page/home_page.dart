@@ -1,6 +1,9 @@
 // lib/page/home_page.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/api/api_client.dart'; // ✅ 引入 API Client
+import 'package:flutter_application_1/api/api_client.dart';
+
+// ✅ 新增：通知 widget
+import 'package:flutter_application_1/widgets/ui/notification_widget.dart';
 
 /// ---------------------------------------------------------------------------
 /// Model (對接後端 OutfitDto)
@@ -18,20 +21,19 @@ class Outfit {
     this.tags = const [],
   });
 
-  // ✅ Factory: 解析後端 JSON
-  // 後端 OutfitDto: { id, notes, topId, ... }
   factory Outfit.fromJson(Map<String, dynamic> json) {
-    // 簡單邏輯：如果有 notes 就當標題，沒有就顯示預設
+    final rawId = json['id'];
+    final id =
+        rawId?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
+
     String notes = json['notes']?.toString() ?? '';
-    if (notes.isEmpty) notes = '我的穿搭 #${json['id']}';
-    
+    if (notes.trim().isEmpty) notes = '我的穿搭 #$id';
+
     return Outfit(
-      id: json['id'].toString(),
+      id: id,
       title: notes,
-      // 暫時寫死，因為後端還沒回傳天氣資訊
-      subtitle: '24°C · 舒適', 
-      // 暫時寫死，後端還沒回傳 tags
-      tags: ['休閒', '日常'], 
+      subtitle: '24°C · 舒適', // TODO: 後端補 weather 後改成動態
+      tags: const ['休閒', '日常'], // TODO: 後端補 tags 後改成動態
     );
   }
 }
@@ -41,9 +43,9 @@ class Outfit {
 /// ---------------------------------------------------------------------------
 class HomePage extends StatefulWidget {
   const HomePage({
-    super.key, 
-    required this.hasItems, // TODO: 這個參數未來可以改由 API 判斷
-    required this.onAddItems
+    super.key,
+    required this.hasItems, // TODO: 未來可移除，以 API 為主
+    required this.onAddItems,
   });
 
   final bool hasItems;
@@ -56,34 +58,89 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   List<Outfit> outfits = [];
   bool _isLoading = false;
+  bool _didLoadOnce = false; // ✅ 用來判斷是否需要顯示錯誤提示
+
+  // ✅ 新增：通知狀態
+  List<AppNotification> _notifications = [];
+  bool _isNotiLoading = false;
+  bool _didLoadNotiOnce = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchOutfits(); // ✅ 啟動時載入
+    _fetchOutfits();
+    _fetchNotifications(); // ✅ 一起抓通知
   }
 
   Future<void> _fetchOutfits() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
-    
+
     try {
-      // 呼叫後端 API
       final list = await ApiClient.I.listOutfits();
-      
+
       if (!mounted) return;
       setState(() {
         outfits = list.map((json) => Outfit.fromJson(json)).toList();
       });
     } catch (e) {
-      // 暫時不跳錯，因為剛開始可能還沒建立任何穿搭
-      // debugPrint('Home fetch error: $e');
+      debugPrint('Home fetch error: $e');
+
+      if (_didLoadOnce && mounted && outfits.isEmpty) {
+        _snack('目前無法取得穿搭，請稍後再試');
+      }
     } finally {
+      _didLoadOnce = true;
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // 模擬重新生成 (實際上是重新撈取列表)
+  /// ✅ 新增：抓通知（目前先 mock，等你後端通知 API 好再換）
+  Future<void> _fetchNotifications() async {
+    if (!mounted) return;
+    setState(() => _isNotiLoading = true);
+
+    try {
+      // TODO: 後端完成後換成真的 API，例如：
+      // final list = await ApiClient.I.listNotifications();
+      // setState(() {
+      //   _notifications = list.map((json) => AppNotification.fromJson(json)).toList();
+      // });
+
+      // ---- 暫時 mock ----
+      await Future.delayed(const Duration(milliseconds: 200));
+      final now = DateTime.now();
+      final mock = <AppNotification>[
+        AppNotification(
+          id: 'n1',
+          title: '穿搭建議已更新',
+          message: '今日推薦穿搭已產生，快來看看～',
+          isRead: false,
+          timestamp: now.subtract(const Duration(minutes: 5)),
+        ),
+        AppNotification(
+          id: 'n2',
+          title: '新社群穿搭上架',
+          message: '社群有新的熱門穿搭，去看看靈感吧！',
+          isRead: false,
+          timestamp: now.subtract(const Duration(hours: 2)),
+        ),
+      ];
+
+      if (!mounted) return;
+      setState(() => _notifications = mock);
+    } catch (e) {
+      debugPrint('Notification fetch error: $e');
+
+      if (_didLoadNotiOnce && mounted) {
+        _snack('目前無法取得通知，請稍後再試');
+      }
+    } finally {
+      _didLoadNotiOnce = true;
+      if (mounted) setState(() => _isNotiLoading = false);
+    }
+  }
+
   void _handleRefresh() {
     _snack('正在更新穿搭建議...');
     _fetchOutfits();
@@ -92,7 +149,26 @@ class _HomePageState extends State<HomePage> {
   void _handleSave(String id) => _snack('穿搭已儲存到收藏');
   void _handleShare(String id) => _snack('穿搭分享連結已複製');
 
+  // ✅ 新增：通知已讀 / 關閉
+  void _dismissNoti(String id) {
+    setState(() {
+      _notifications = _notifications.map((n) {
+        if (n.id == id) {
+          return AppNotification(
+            id: n.id,
+            title: n.title,
+            message: n.message,
+            isRead: true,
+            timestamp: n.timestamp,
+          );
+        }
+        return n;
+      }).toList();
+    });
+  }
+
   void _snack(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
     );
@@ -117,126 +193,164 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
-    final isLarge = _isLarge(w);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final isLarge = _isLarge(w);
 
-    // 如果後端完全沒資料，且 hasItems 為 false (雖然這參數目前由上層傳入)，顯示 EmptyState
-    // 這裡我們先簡單判斷：如果 loading 結束且 outfits 為空，顯示 EmptyState
-    if (!_isLoading && outfits.isEmpty && !widget.hasItems) {
-       return _buildEmptyState(w, isLarge);
-    }
+        final showEmptyState =
+            !_isLoading && outfits.isEmpty && !widget.hasItems;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('每日穿搭建議'),
-        actions: [
-          if (!isLarge)
-            IconButton(
-              tooltip: '重新生成',
-              onPressed: _handleRefresh,
-              icon: const Icon(Icons.shuffle_rounded),
-            ),
-          const _SettingsButton(),
-        ],
-      ),
-      body: _isLoading 
-          ? const Center(child: CircularProgressIndicator()) 
-          : LayoutBuilder(
-              builder: (context, constraints) {
-                final maxW = _containerMaxWidth(w);
-                return Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: maxW),
-                    child: SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(isLarge ? 24 : 16, 16, isLarge ? 24 : 16, isLarge ? 24 : 88),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // 天氣資訊
-                          const WeatherBar(),
-                          const SizedBox(height: 16),
+        if (showEmptyState) {
+          return _buildEmptyState(w, isLarge);
+        }
 
-                          // 桌面版統計卡片
-                          if (isLarge) _DesktopStats(),
-
-                          // 標題列
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const _TitleWithSub(
-                                title: '今日推薦穿搭',
-                                subtitle: '來自你的衣櫃與 AI 建議',
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('每日穿搭建議'),
+            actions: [
+              if (!isLarge)
+                IconButton(
+                  tooltip: '重新生成',
+                  onPressed: _handleRefresh,
+                  icon: const Icon(Icons.shuffle_rounded),
+                ),
+              const _SettingsButton(),
+            ],
+          ),
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: () async {
+                    await _fetchOutfits();
+                    await _fetchNotifications();
+                  },
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints:
+                          BoxConstraints(maxWidth: _containerMaxWidth(w)),
+                      child: SingleChildScrollView(
+                        physics:
+                            const AlwaysScrollableScrollPhysics(),
+                        padding: EdgeInsets.fromLTRB(
+                          isLarge ? 24 : 16,
+                          16,
+                          isLarge ? 24 : 16,
+                          isLarge ? 24 : 88,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // ✅ 新增：通知區塊（有未讀才顯示）
+                            if (!_isNotiLoading)
+                              NotificationWidget(
+                                notifications: _notifications,
+                                onViewAll: () {
+                                  // TODO: 之後導到通知頁
+                                  _snack('開啟通知列表（待實作）');
+                                },
+                                onDismiss: _dismissNoti,
                               ),
-                              if (isLarge)
-                                OutlinedButton.icon(
-                                  onPressed: _handleRefresh,
-                                  icon: const Icon(Icons.shuffle_rounded, size: 18),
-                                  label: const Text('重新生成'),
+
+                            const WeatherBar(),
+                            const SizedBox(height: 16),
+
+                            if (isLarge) _DesktopStats(),
+                            if (isLarge) const SizedBox(height: 16),
+
+                            Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                const _TitleWithSub(
+                                  title: '今日推薦穿搭',
+                                  subtitle: '來自你的衣櫃與 AI 建議',
                                 ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-
-                          // 內容區
-                          if (outfits.isEmpty)
-                             const Padding(
-                               padding: EdgeInsets.all(32.0),
-                               child: Center(child: Text('暫無穿搭建議，請先到衣櫃新增單品')),
-                             )
-                          else
-                            GridView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: _gridCols(w),
-                                crossAxisSpacing: 16,
-                                mainAxisSpacing: 16,
-                                childAspectRatio: 4/3,
-                              ),
-                              itemCount: outfits.length,
-                              itemBuilder: (context, i) {
-                                final o = outfits[i];
-                                return OutfitRecommendCard(
-                                  outfit: o,
-                                  onSave: () => _handleSave(o.id),
-                                  onShare: () => _handleShare(o.id),
-                                );
-                              },
+                                if (isLarge)
+                                  OutlinedButton.icon(
+                                    onPressed: _handleRefresh,
+                                    icon: const Icon(
+                                      Icons.shuffle_rounded,
+                                      size: 18,
+                                    ),
+                                    label: const Text('重新生成'),
+                                  ),
+                              ],
                             ),
-                        ],
+                            const SizedBox(height: 12),
+
+                            if (outfits.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.all(32.0),
+                                child: Center(
+                                  child: Text('暫無穿搭建議，請先到衣櫃新增單品'),
+                                ),
+                              )
+                            else
+                              GridView.builder(
+                                shrinkWrap: true,
+                                physics:
+                                    const NeverScrollableScrollPhysics(),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: _gridCols(w),
+                                  crossAxisSpacing: 16,
+                                  mainAxisSpacing: 16,
+                                  childAspectRatio: 4 / 3,
+                                ),
+                                itemCount: outfits.length,
+                                itemBuilder: (context, i) {
+                                  final o = outfits[i];
+                                  return OutfitRecommendCard(
+                                    outfit: o,
+                                    onSave: () => _handleSave(o.id),
+                                    onShare: () => _handleShare(o.id),
+                                  );
+                                },
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                );
-              },
-            ),
+                ),
+        );
+      },
     );
   }
 
   Widget _buildEmptyState(double w, bool isLarge) {
-     return Scaffold(
-        appBar: AppBar(title: const Text('每日出裝'), actions: const [_SettingsButton()]),
-        body: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: _containerMaxWidth(w)),
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(isLarge ? 24 : 16, 16, isLarge ? 24 : 16, isLarge ? 24 : 88),
-              child: EmptyState(
-                icon: Icons.inventory_2_outlined,
-                title: '尚未建立衣櫃',
-                description: '新增衣服單品，開始使用 AI 智能穿搭功能',
-                actionLabel: '前往衣櫃',
-                onAction: widget.onAddItems,
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('每日出裝'),
+        actions: const [_SettingsButton()],
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: _containerMaxWidth(w)),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              isLarge ? 24 : 16,
+              16,
+              isLarge ? 24 : 16,
+              isLarge ? 24 : 88,
+            ),
+            child: EmptyState(
+              icon: Icons.inventory_2_outlined,
+              title: '尚未建立衣櫃',
+              description: '新增衣服單品，開始使用 AI 智能穿搭功能',
+              actionLabel: '前往衣櫃',
+              onAction: widget.onAddItems,
             ),
           ),
         ),
-      );
+      ),
+    );
   }
 }
 
 // ---------------------------------------------------------------------------
-// Widgets
+// Widgets（保持你原本的 UI）
 // ---------------------------------------------------------------------------
 
 class _SettingsButton extends StatelessWidget {
@@ -258,10 +372,12 @@ class WeatherBar extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            const Icon(Icons.wb_sunny_outlined, color: Colors.amber),
+            const Icon(Icons.wb_sunny_outlined,
+                color: Colors.amber),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -269,7 +385,11 @@ class WeatherBar extends StatelessWidget {
                 children: [
                   Text('台北 · 晴時多雲', style: t.titleMedium),
                   const SizedBox(height: 2),
-                  Text('20° / 26° · 濕度 65% · 風 3m/s', style: t.bodySmall?.copyWith(color: Colors.grey[600])),
+                  Text(
+                    '20° / 26° · 濕度 65% · 風 3m/s',
+                    style: t.bodySmall
+                        ?.copyWith(color: Colors.grey[600]),
+                  ),
                 ],
               ),
             ),
@@ -288,40 +408,60 @@ class _DesktopStats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
-    Widget stat(String title, String value, IconData icon, Color color) => Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+
+    Widget stat(
+            String title, String value, IconData icon, Color color) =>
+        Card(
+          child: Padding(
+            padding:
+                const EdgeInsets.fromLTRB(16, 18, 16, 18),
+            child: Row(
+              mainAxisAlignment:
+                  MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: t.bodySmall?.copyWith(color: Colors.grey[600])),
-                const SizedBox(height: 6),
-                Text(value, style: t.headlineSmall),
+                Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: t.bodySmall
+                            ?.copyWith(color: Colors.grey[600])),
+                    const SizedBox(height: 6),
+                    Text(value, style: t.headlineSmall),
+                  ],
+                ),
+                Icon(icon, size: 28, color: color),
               ],
             ),
-            Icon(icon, size: 28, color: color),
-          ],
-        ),
-      ),
-    );
+          ),
+        );
 
     return Row(
       children: [
-        Expanded(child: stat('本週穿搭', '12 套', Icons.calendar_today_outlined, Colors.blue)),
+        Expanded(
+            child: stat('本週穿搭', '12 套', Icons.calendar_today_outlined,
+                Colors.blue)),
         const SizedBox(width: 12),
-        Expanded(child: stat('衣櫃單品', '42 件', Icons.inventory_2_outlined, Colors.green)),
+        Expanded(
+            child: stat('衣櫃單品', '42 件', Icons.inventory_2_outlined,
+                Colors.green)),
         const SizedBox(width: 12),
-        Expanded(child: stat('風格匹配', '92%', Icons.trending_up, Colors.purple)),
+        Expanded(
+            child: stat('風格匹配', '92%', Icons.trending_up,
+                Colors.purple)),
       ],
     );
   }
 }
 
 class OutfitRecommendCard extends StatelessWidget {
-  const OutfitRecommendCard({super.key, required this.outfit, required this.onSave, required this.onShare});
+  const OutfitRecommendCard({
+    super.key,
+    required this.outfit,
+    required this.onSave,
+    required this.onShare,
+  });
+
   final Outfit outfit;
   final VoidCallback onSave;
   final VoidCallback onShare;
@@ -329,12 +469,12 @@ class OutfitRecommendCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
+
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Image placeholder (這裡未來要顯示穿搭組合圖)
           Expanded(
             child: Container(
               decoration: const BoxDecoration(
@@ -344,29 +484,52 @@ class OutfitRecommendCard extends StatelessWidget {
                   end: Alignment.bottomRight,
                 ),
               ),
-              child: const Icon(Icons.checkroom_outlined, size: 64, color: Colors.black54),
+              child: const Icon(Icons.checkroom_outlined,
+                  size: 64, color: Colors.black54),
             ),
           ),
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
               children: [
                 Text(outfit.title, style: t.titleMedium),
                 const SizedBox(height: 4),
-                Text(outfit.subtitle, style: t.bodySmall?.copyWith(color: Colors.grey[600])),
+                Text(
+                  outfit.subtitle,
+                  style: t.bodySmall
+                      ?.copyWith(color: Colors.grey[600]),
+                ),
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
-                  children: [for (final tag in outfit.tags) Chip(label: Text(tag), visualDensity: VisualDensity.compact)],
+                  children: [
+                    for (final tag in outfit.tags)
+                      Chip(
+                        label: Text(tag),
+                        visualDensity:
+                            VisualDensity.compact,
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    OutlinedButton.icon(onPressed: onSave, icon: const Icon(Icons.bookmark_border, size: 18), label: const Text('收藏')),
+                    OutlinedButton.icon(
+                      onPressed: onSave,
+                      icon: const Icon(Icons.bookmark_border,
+                          size: 18),
+                      label: const Text('收藏'),
+                    ),
                     const SizedBox(width: 8),
-                    OutlinedButton.icon(onPressed: onShare, icon: const Icon(Icons.ios_share, size: 18), label: const Text('分享')),
+                    OutlinedButton.icon(
+                      onPressed: onShare,
+                      icon: const Icon(Icons.ios_share,
+                          size: 18),
+                      label: const Text('分享'),
+                    ),
                   ],
                 ),
               ],
@@ -379,7 +542,15 @@ class OutfitRecommendCard extends StatelessWidget {
 }
 
 class EmptyState extends StatelessWidget {
-  const EmptyState({super.key, required this.icon, required this.title, required this.description, required this.actionLabel, required this.onAction});
+  const EmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
   final IconData icon;
   final String title;
   final String description;
@@ -389,18 +560,27 @@ class EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 24),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+        padding: const EdgeInsets.symmetric(
+            horizontal: 20, vertical: 28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 56, color: Colors.blueGrey),
             const SizedBox(height: 12),
-            Text(title, style: t.titleLarge, textAlign: TextAlign.center),
+            Text(title,
+                style: t.titleLarge,
+                textAlign: TextAlign.center),
             const SizedBox(height: 6),
-            Text(description, style: t.bodyMedium?.copyWith(color: Colors.grey[600]), textAlign: TextAlign.center),
+            Text(
+              description,
+              style: t.bodyMedium
+                  ?.copyWith(color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 16),
             ElevatedButton(onPressed: onAction, child: Text(actionLabel)),
           ],
@@ -411,20 +591,30 @@ class EmptyState extends StatelessWidget {
 }
 
 class _TitleWithSub extends StatelessWidget {
-  const _TitleWithSub({required this.title, required this.subtitle});
+  const _TitleWithSub({
+    required this.title,
+    required this.subtitle,
+  });
+
   final String title;
   final String subtitle;
+
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.only(right: 12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
         children: [
           Text(title, style: t.titleLarge),
           const SizedBox(height: 4),
-          Text(subtitle, style: t.bodySmall?.copyWith(color: Colors.grey[600])),
+          Text(
+            subtitle,
+            style:
+                t.bodySmall?.copyWith(color: Colors.grey[600]),
+          ),
         ],
       ),
     );

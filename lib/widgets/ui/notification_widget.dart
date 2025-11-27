@@ -24,7 +24,8 @@ class AppNotification {
       title: json['title']?.toString() ?? '',
       message: json['message']?.toString() ?? '',
       isRead: json['isRead'] == true,
-      timestamp: DateTime.tryParse(json['timestamp']?.toString() ?? '') ??
+      timestamp:
+          DateTime.tryParse(json['timestamp']?.toString() ?? '') ??
           DateTime.now(),
     );
   }
@@ -40,17 +41,6 @@ class AppNotification {
 
 /// ---------------------------------------------------------------------------
 /// RWD NotificationWidget
-///
-/// 使用方式：
-/// NotificationWidget(
-///   notifications: yourList,
-///   onViewAll: () {
-///     // 導到通知頁 or 開啟 Dialog
-///   },
-///   onDismiss: (id) {
-///     // 更新狀態為已讀 / 從列表移除
-///   },
-/// )
 /// ---------------------------------------------------------------------------
 class NotificationWidget extends StatelessWidget {
   final List<AppNotification> notifications;
@@ -64,10 +54,13 @@ class NotificationWidget extends StatelessWidget {
     this.onDismiss,
   });
 
-  /// 對應原本的 formatTime(timestamp: string)
+  /// 對應原本的 formatTime(timestamp)
   String _formatTime(DateTime timestamp) {
     final now = DateTime.now();
     final diff = now.difference(timestamp);
+
+    // ✅ Guard: 如果 timestamp 在未來（時鐘不同步），直接顯示「剛剛」
+    if (diff.isNegative) return '剛剛';
 
     final minutes = diff.inMinutes;
     final hours = diff.inHours;
@@ -76,17 +69,17 @@ class NotificationWidget extends StatelessWidget {
     if (minutes < 60) return '$minutes 分鐘前';
     if (hours < 24) return '$hours 小時前';
 
-    // 類似 toLocaleDateString('zh-TW', { month: 'short', day: 'numeric' })
     final month = timestamp.month;
     final day = timestamp.day;
-    // 簡單顯示：例如「3月5日」
     return '${month}月$day日';
   }
 
   @override
   Widget build(BuildContext context) {
-    // 未讀的最新 3 則
-    final recentUnread = notifications.where((n) => !n.isRead).take(3).toList();
+    // ✅ 先算 unread
+    final unreadList = notifications.where((n) => !n.isRead).toList();
+    final recentUnread = unreadList.take(3).toList();
+    final unreadTotal = unreadList.length;
 
     if (recentUnread.isEmpty) {
       return const SizedBox.shrink();
@@ -94,16 +87,13 @@ class NotificationWidget extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 最大寬度控制：大螢幕時置中、手機則佔滿
         final double maxWidth =
             constraints.maxWidth > 720 ? 720 : constraints.maxWidth;
 
         return Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: maxWidth,
-            ),
+            constraints: BoxConstraints(maxWidth: maxWidth),
             child: Container(
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
@@ -117,7 +107,7 @@ class NotificationWidget extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildHeader(context, recentUnread.length),
+                    _buildHeader(context, unreadTotal),
                     const SizedBox(height: 8),
                     Column(
                       children: List.generate(recentUnread.length, (index) {
@@ -131,7 +121,6 @@ class NotificationWidget extends StatelessWidget {
                       }),
                     ),
                   ],
-
                 ),
               ),
             ),
@@ -142,10 +131,7 @@ class NotificationWidget extends StatelessWidget {
   }
 
   /// Header：圖示 + 標題 + 未讀 Badge + 查看全部
-  Widget _buildHeader(BuildContext context, int recentCount) {
-    final int unreadTotal =
-        notifications.where((n) => !n.isRead).length;
-
+  Widget _buildHeader(BuildContext context, int unreadTotal) {
     return Row(
       children: [
         Row(
@@ -165,7 +151,6 @@ class NotificationWidget extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
-            // Badge（未讀數）
             Container(
               padding:
                   const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -212,12 +197,10 @@ class NotificationWidget extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 內容
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 標題 + 小藍點
                 Row(
                   children: [
                     Expanded(
@@ -243,7 +226,6 @@ class NotificationWidget extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 4),
-                // 內容（最多兩行）
                 Text(
                   n.message,
                   style: const TextStyle(
@@ -254,7 +236,6 @@ class NotificationWidget extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                // 時間
                 Text(
                   _formatTime(n.timestamp),
                   style: const TextStyle(
