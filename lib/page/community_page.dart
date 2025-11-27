@@ -1,8 +1,13 @@
-import 'dart:async'; // ✅ 新增：Completer
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
-import 'package:flutter_application_1/api/api_client.dart'; // ✅ 引入 API Client
-import '../widgets/ui/add_outfit_dialog.dart' as adddlg;
+import 'package:flutter_application_1/api/api_client.dart';
+
+// 引用衣櫃模型 (為了使用 ClothingItem 類別)
+import 'package:flutter_application_1/page/wardrobe_page.dart' as wardrobe;
+// 引用衣物選擇器
+import 'package:flutter_application_1/widgets/wardrobe_picker.dart';
+// 引用新增穿搭的對話框
+import 'package:flutter_application_1/widgets/ui/add_outfit_dialog.dart';
 
 /// -----------------------------
 /// Models (對接後端)
@@ -22,6 +27,7 @@ class Outfit {
   final double aspect; // image aspect ratio for masonry variance
   int likes;
   bool isLiked;
+  final String? imageUrl; // 新增：穿搭圖片網址
 
   Outfit({
     required this.id,
@@ -32,34 +38,53 @@ class Outfit {
     this.aspect = 4 / 3,
     this.likes = 0,
     this.isLiked = false,
+    this.imageUrl,
   });
 
   // ✅ Factory: 解析後端 OutfitDto JSON
   factory Outfit.fromJson(Map<String, dynamic> json) {
-    String notes = json['notes']?.toString() ?? '';
-    if (notes.isEmpty) notes = '分享穿搭 #${json['id']}';
+    // 解析關聯的單品列表
+    List<OutfitItem> parsedItems = [];
+    if (json['items'] != null) {
+      parsedItems = (json['items'] as List).map((i) {
+        return OutfitItem(
+          i['brand'] ?? '',
+          i['subCategory'] ?? i['name'] ?? '單品',
+        );
+      }).toList();
+    }
+
+    String notes = json['description'] ?? json['notes'] ?? '';
+    if (notes.isEmpty) notes = '分享穿搭';
 
     return Outfit(
       id: json['id'].toString(),
-      userName: 'User${json['id']}',
+      userName: json['userDisplayName'] ?? 'User${json['id']}',
       description: notes,
-      tags: ['日常', '休閒'],
-      items: [],
-      aspect: 1.0,
-      likes: 0,
+      tags: (json['tags'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      items: parsedItems,
+      aspect: 1.0, // 若後端有存長寬比可在此讀取，目前預設 1.0
+      likes: json['likeCount'] ?? 0,
+      isLiked: json['likedByMe'] ?? false,
+      imageUrl: json['imageUrl'],
     );
   }
 }
 
 class Comment {
-  final String user;
+  final String id;
+  final String userName;
   final String text;
-  const Comment(this.user, this.text);
-}
+  const Comment({required this.id, required this.userName, required this.text});
 
-final Map<String, List<Comment>> mockComments = {
-  'o1': const [Comment('Allen', '外套配色好看!'), Comment('Becky', '工裝褲版型不錯')],
-};
+  factory Comment.fromJson(Map<String, dynamic> json) {
+    return Comment(
+      id: json['id'].toString(),
+      userName: json['userDisplayName'] ?? '匿名用戶',
+      text: json['content'] ?? '',
+    );
+  }
+}
 
 /// -----------------------------
 /// Community Page (RWD)
@@ -84,6 +109,7 @@ class _CommunityPageState extends State<CommunityPage> {
     _fetchOutfits();
   }
 
+  // 讀取穿搭列表
   Future<void> _fetchOutfits() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
@@ -106,85 +132,84 @@ class _CommunityPageState extends State<CommunityPage> {
     }
   }
 
-  // ------------------ RWD helpers ------------------
-  double _containerMaxWidth(double w) {
-    if (w >= 1600) return 1400;
-    if (w >= 1200) return 1200;
-    if (w >= 900) return 980;
-    if (w >= 600) return 760;
-    return w - 24;
-  }
+  // ✅ 核心流程：新增穿搭
+  Future<void> _startAddOutfitFlow() async {
+    // 步驟 1: 開啟衣物選擇器 (WardrobePicker)
+    final selectedItems = await Navigator.push<List<wardrobe.ClothingItem>>(
+      context,
+      MaterialPageRoute(builder: (_) => const WardrobePicker()),
+    );
 
-  bool _isLg(double w) => w >= 1200;
-  bool _isMd(double w) => w >= 900;
+    // 如果使用者沒選或是按返回，selectedItems 會是 null 或空
+    if (selectedItems == null || selectedItems.isEmpty) return;
 
-  int _columns(double w) {
-    if (w >= 1600) return 5;
-    if (w >= 1200) return 4;
-    if (w >= 900) return 3;
-    if (w >= 600) return 2;
-    return 1;
-  }
+    if (!mounted) return;
 
-  // ------------------ Actions ------------------
-  void _handleLike(String id) {
-    setState(() {
-      final idx = outfits.indexWhere((o) => o.id == id);
-      if (idx >= 0) {
-        final o = outfits[idx];
-        o.isLiked = !o.isLiked;
-        o.likes += o.isLiked ? 1 : -1;
-      }
-    });
-  }
-
-  /// ✅ 新增：開啟你的 AddOutfitDialog，使用 onSubmit + Completer 收資料
-  Future<void> _openAddOutfitDialog() async {
-    final completer = Completer<adddlg.AddOutfitFormData?>();
-
+    // 步驟 2: 開啟填寫資訊對話框 (AddOutfitDialog)
     await showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (_) => adddlg.AddOutfitDialog(
-        onSubmit: (data) {
-          if (!completer.isCompleted) completer.complete(data);
-        },
-        onClose: () {
-          if (!completer.isCompleted) completer.complete(null);
+      builder: (_) => AddOutfitDialog(
+        onSubmit: (formData) async {
+          // 步驟 3: 呼叫後端 API 建立穿搭
+          try {
+            // 組裝要傳給後端的資料
+            final outfitData = {
+              'description': formData.description,
+              'imageUrl': formData.imageUrl,
+              'tags': formData.tags,
+              // 將選中的單品 ID 列表傳送給後端
+              'itemIds': selectedItems.map((i) => i.id).toList(),
+            };
+
+            await ApiClient.I.createOutfit(outfitData);
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('發布成功！')),
+              );
+              _fetchOutfits(); // 成功後重新整理列表
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('發布失敗: $e')),
+              );
+            }
+          }
         },
       ),
     );
+  }
 
-    final data = await completer.future;
-    if (data == null) return; // 使用者取消
+  // ✅ 按讚 / 取消按讚邏輯
+  Future<void> _handleLike(String id) async {
+    final idx = outfits.indexWhere((o) => o.id == id);
+    if (idx < 0) return;
 
-    // ✅ 前端先插入一筆（等後端 POST API 好再改成同步）
+    final item = outfits[idx];
+    // 樂觀更新 UI (先變色再送 API)
     setState(() {
-      outfits.insert(
-        0,
-        Outfit(
-          id: 'local-${DateTime.now().millisecondsSinceEpoch}',
-          userName: 'Me',
-          description: data.description,
-          tags: data.tags,
-          items: data.items.map((it) => OutfitItem(it.brand, it.category)).toList(),
-          aspect: 1.0,
-          likes: 0,
-        ),
-      );
-      activeTab = 'latest';
-      searchQuery = '';
+      item.isLiked = !item.isLiked;
+      item.likes += item.isLiked ? 1 : -1;
     });
 
-    if (mounted) {
+    try {
+      if (item.isLiked) {
+        await ApiClient.I.likeOutfit(id);
+      } else {
+        await ApiClient.I.unlikeOutfit(id);
+      }
+    } catch (e) {
+      // 失敗則回滾狀態
+      if (!mounted) return;
+      setState(() {
+        item.isLiked = !item.isLiked;
+        item.likes += item.isLiked ? 1 : -1;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('穿搭已新增（尚未同步後端）')),
+        const SnackBar(content: Text('操作失敗，請檢查網路')),
       );
     }
-
-    // TODO：等你後端 createOutfit API 完成後：
-    // await ApiClient.I.createOutfit({...data});
-    // await _fetchOutfits();
   }
 
   void _showFilterSheet() {
@@ -218,59 +243,37 @@ class _CommunityPageState extends State<CommunityPage> {
     );
   }
 
+  // ✅ 開啟詳情與留言 Sheet
   void _openDetail(Outfit outfit) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.9,
-        minChildSize: 0.6,
-        builder: (_, controller) {
-          final comments = mockComments[outfit.id] ?? const <Comment>[];
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: ListView(
-              controller: controller,
-              children: [
-                const SizedBox(height: 8),
-                _OutfitHero(outfit: outfit),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    CircleAvatar(child: Text(outfit.userName.substring(0, 1))),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(outfit.userName, style: const TextStyle(fontWeight: FontWeight.w600))),
-                    IconButton(
-                      onPressed: () => setState(() => _handleLike(outfit.id)),
-                      icon: Icon(outfit.isLiked ? Icons.favorite : Icons.favorite_border, color: Colors.pink),
-                    ),
-                    Text('${outfit.likes}')
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(outfit.description),
-                const SizedBox(height: 8),
-                Wrap(spacing: 8, runSpacing: 8, children: [for (final t in outfit.tags) Chip(label: Text(t))]),
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 8),
-                const Text('留言', style: TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 8),
-                if (comments.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('尚無留言', style: TextStyle(color: Colors.grey)),
-                  ),
-                for (final c in comments) _CommentTile(c),
-                const SizedBox(height: 24),
-              ],
-            ),
-          );
-        },
+      builder: (_) => _CommentSheet(
+        outfit: outfit,
+        onLikeToggle: () => _handleLike(outfit.id),
       ),
     );
+  }
+
+  // ------------------ RWD helpers ------------------
+  double _containerMaxWidth(double w) {
+    if (w >= 1600) return 1400;
+    if (w >= 1200) return 1200;
+    if (w >= 900) return 980;
+    if (w >= 600) return 760;
+    return w - 24;
+  }
+
+  bool _isLg(double w) => w >= 1200;
+  bool _isMd(double w) => w >= 900;
+
+  int _columns(double w) {
+    if (w >= 1600) return 5;
+    if (w >= 1200) return 4;
+    if (w >= 900) return 3;
+    if (w >= 600) return 2;
+    return 1;
   }
 
   // ------------------ Derived data ------------------
@@ -321,11 +324,11 @@ class _CommunityPageState extends State<CommunityPage> {
               if (q != null) setState(() => searchQuery = q);
             },
           ),
-          /// ✅ 改成真正開啟新增穿搭 Dialog
+          // ✅ 連接新增流程
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: '新增穿搭分享',
-            onPressed: _openAddOutfitDialog,
+            onPressed: _startAddOutfitFlow,
           ),
           IconButton(icon: const Icon(Icons.settings_outlined), onPressed: () {}),
         ],
@@ -336,7 +339,8 @@ class _CommunityPageState extends State<CommunityPage> {
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: _containerMaxWidth(w)),
                 child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(isLg ? 24 : 16, 16, isLg ? 24 : 16, isLg ? 24 : 88),
+                  padding: EdgeInsets.fromLTRB(
+                      isLg ? 24 : 16, 16, isLg ? 24 : 16, isLg ? 24 : 88),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -461,6 +465,180 @@ class _CommunityPageState extends State<CommunityPage> {
 }
 
 /// -----------------------------
+/// 獨立元件：留言與詳情 Sheet (已對接 API)
+/// -----------------------------
+class _CommentSheet extends StatefulWidget {
+  final Outfit outfit;
+  final VoidCallback onLikeToggle;
+  const _CommentSheet({required this.outfit, required this.onLikeToggle});
+
+  @override
+  State<_CommentSheet> createState() => _CommentSheetState();
+}
+
+class _CommentSheetState extends State<_CommentSheet> {
+  final TextEditingController _commentCtrl = TextEditingController();
+  List<Comment> _comments = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadComments();
+  }
+
+  Future<void> _loadComments() async {
+    try {
+      final list = await ApiClient.I.getComments(widget.outfit.id);
+      if (mounted) {
+        setState(() {
+          _comments = list.map((j) => Comment.fromJson(j)).toList();
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _sendComment() async {
+    final text = _commentCtrl.text.trim();
+    if (text.isEmpty) return;
+
+    FocusScope.of(context).unfocus(); // 收鍵盤
+    _commentCtrl.clear();
+
+    // 樂觀更新 UI
+    final tempComment = Comment(id: 'temp', userName: '我', text: text);
+    setState(() => _comments.add(tempComment));
+
+    try {
+      await ApiClient.I.postComment(widget.outfit.id, text);
+      _loadComments(); // 重新拉取以取得正確 ID
+    } catch (e) {
+      setState(() => _comments.remove(tempComment)); // 失敗回滾
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('留言失敗')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.9,
+      minChildSize: 0.6,
+      builder: (_, scrollController) {
+        return Column(
+          children: [
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  const SizedBox(height: 8),
+                  _OutfitHero(outfit: widget.outfit),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      CircleAvatar(child: Text(widget.outfit.userName.substring(0, 1))),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(widget.outfit.userName, style: const TextStyle(fontWeight: FontWeight.w600))),
+                      IconButton(
+                        onPressed: () {
+                          setState(() {
+                            widget.outfit.isLiked = !widget.outfit.isLiked;
+                            widget.outfit.likes += widget.outfit.isLiked ? 1 : -1;
+                          });
+                          widget.onLikeToggle();
+                        },
+                        icon: Icon(widget.outfit.isLiked ? Icons.favorite : Icons.favorite_border, color: Colors.pink),
+                      ),
+                      Text('${widget.outfit.likes}'),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(widget.outfit.description),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 8, children: [for (final t in widget.outfit.tags) Chip(label: Text(t))]),
+
+                  if (widget.outfit.items.isNotEmpty) ...[
+                    const Divider(),
+                    const Text('使用單品', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: widget.outfit.items.map((item) => Chip(
+                            avatar: const Icon(Icons.checkroom, size: 16),
+                            label: Text('${item.brand} ${item.name}'),
+                            backgroundColor: Colors.grey.shade100,
+                          )).toList(),
+                    ),
+                  ],
+
+                  const Divider(),
+                  const Text('留言', style: TextStyle(fontWeight: FontWeight.w600)),
+                  if (_loading)
+                    const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
+                  else if (_comments.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('成為第一個留言的人吧！', style: TextStyle(color: Colors.grey)),
+                    ),
+
+                  for (final c in _comments)
+                    ListTile(
+                      dense: true,
+                      leading: CircleAvatar(radius: 14, child: Text(c.userName.substring(0, 1), style: const TextStyle(fontSize: 12))),
+                      title: Text(c.userName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      subtitle: Text(c.text),
+                    ),
+
+                  SizedBox(height: 24 + bottomInset), // 避免被輸入框擋住
+                ],
+              ),
+            ),
+
+            // 底部輸入框
+            Container(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 8 + bottomInset),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: Colors.grey.shade200)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _commentCtrl,
+                      decoration: InputDecoration(
+                        hintText: '留言...',
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+                        filled: true,
+                        fillColor: Colors.grey.shade100,
+                      ),
+                      onSubmitted: (_) => _sendComment(),
+                    ),
+                  ),
+                  IconButton(icon: const Icon(Icons.send, color: Colors.blue), onPressed: _sendComment),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// -----------------------------
 /// UI Parts
 /// -----------------------------
 class _Tabs extends StatelessWidget {
@@ -535,16 +713,18 @@ class _OutfitCard extends StatelessWidget {
           children: [
             AspectRatio(
               aspectRatio: outfit.aspect,
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFFDBEAFE), Color(0xFFEDE9FE)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                child: const Icon(Icons.checkroom_outlined, size: 64, color: Colors.black54),
-              ),
+              child: outfit.imageUrl != null && outfit.imageUrl!.isNotEmpty
+                  ? Image.network(outfit.imageUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.grey[200], child: const Icon(Icons.error)))
+                  : Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFFDBEAFE), Color(0xFFEDE9FE)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: const Icon(Icons.checkroom_outlined, size: 64, color: Colors.black54),
+                    ),
             ),
             Padding(
               padding: const EdgeInsets.all(12),
@@ -599,16 +779,18 @@ class _OutfitHero extends StatelessWidget {
         children: [
           AspectRatio(
             aspectRatio: outfit.aspect,
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFFDBEAFE), Color(0xFFEDE9FE)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: const Icon(Icons.checkroom_outlined, size: 100, color: Colors.black54),
-            ),
+            child: outfit.imageUrl != null && outfit.imageUrl!.isNotEmpty
+                ? Image.network(outfit.imageUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.grey[200]))
+                : Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFDBEAFE), Color(0xFFEDE9FE)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: const Icon(Icons.checkroom_outlined, size: 100, color: Colors.black54),
+                  ),
           ),
           Padding(
             padding: const EdgeInsets.all(12),
@@ -635,8 +817,8 @@ class _CommentTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       dense: true,
-      leading: CircleAvatar(child: Text(c.user.substring(0, 1))),
-      title: Text(c.user, style: const TextStyle(fontWeight: FontWeight.w600)),
+      leading: CircleAvatar(child: Text(c.userName.substring(0, 1))),
+      title: Text(c.userName, style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(c.text),
     );
   }
