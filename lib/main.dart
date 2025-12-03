@@ -119,6 +119,7 @@ class _AppShellState extends State<_AppShell> {
   final PageStorageBucket _bucket = PageStorageBucket();
 
   // ✅ S-FLOW Theme State (全域主題控制)
+  // 這裡定義初始顏色，您可以改為 false 讓預設是金色
   bool _isPurple = true;
   SFlowColors get _currentColors => _isPurple ? SFlowThemes.purple : SFlowThemes.gold;
 
@@ -251,19 +252,22 @@ class _AppShellState extends State<_AppShell> {
     } 
     else {
       // --- Main Tabs ---
-      // 注意：這裡將 _currentColors 傳入 HomePage 讓其可使用
       switch (_activeTab) {
         case 'home':
-          content = const CommunityPage(key: PageStorageKey('community'));
+          // ✅ 修正 1: 移除 const，並傳入 currentColors
+          content = CommunityPage(
+            key: const PageStorageKey('community'),
+            currentColors: _currentColors,
+          );
           break;
         case 'discover':
+          // ✅ 修正 2: 取消註解，傳入切換函式與顏色
           content = HomePage(
             key: const PageStorageKey('home'),
             hasItems: true,
             onAddItems: _handleAddItems,
-            // 傳遞主題控制給首頁 (如果 HomePage 有定義這些參數)
-            // onThemeToggle: _toggleTheme, 
-            // currentColors: _currentColors,
+            onThemeToggle: _toggleTheme, 
+            currentColors: _currentColors,
           );
           break;
         case 'wardrobe':

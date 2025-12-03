@@ -1,18 +1,19 @@
-// lib/page/wardrobe_page.dart
 import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/api_client.dart';
+import 'package:flutter_application_1/theme/s_flow_design.dart'; // ✅ 引入設計系統
 import 'package:flutter_application_1/widgets/ui/add_item_dialog.dart' as adddlg;
 
 /// ---------------------------------------------------------------------------
-/// Model (對接後端 DTO)
+/// Model (保持不變)
 /// ---------------------------------------------------------------------------
 class ClothingItem {
   final String id;
-  final String category;
-  final String subCategory;
+  final String category;    
+  final String subCategory; 
   final String? brand;
-  final String imageUrl;
+  final String imageUrl;    
   final List<String> tags;
 
   ClothingItem({
@@ -37,7 +38,7 @@ class ClothingItem {
 }
 
 /// ---------------------------------------------------------------------------
-/// RWD WardrobePage
+/// WardrobePage (S-FLOW RWD)
 /// ---------------------------------------------------------------------------
 class WardrobePage extends StatefulWidget {
   const WardrobePage({super.key});
@@ -47,29 +48,20 @@ class WardrobePage extends StatefulWidget {
 }
 
 class _WardrobePageState extends State<WardrobePage> {
-  String viewMode = 'grid';
-  List<ClothingItem> items = [];
+  String viewMode = 'grid'; // grid | list
+  List<ClothingItem> items = []; 
   String selectedCategory = 'all';
   bool _isLoading = false;
 
-  // ✅ 1. 定義顏色翻譯表 (中文 -> 英文 Enum)
-  // 讓 App 知道 "黑色" 對應後端的 "BLACK"
+  // ✅ S-FLOW: 衣櫃頁面使用金色主題
+  final SFlowColors colors = SFlowThemes.gold;
+  
+  // 顏色映射表 (UI中文 -> 後端英文)
   final Map<String, String> _colorMap = {
-    '黑色': 'BLACK',
-    '白色': 'WHITE',
-    '灰色': 'GRAY',
-    '米色': 'BEIGE',
-    '藍色': 'BLUE',
-    '深藍': 'NAVY',
-    '紅色': 'RED',
-    '粉色': 'PINK',
-    '黃色': 'YELLOW',
-    '綠色': 'GREEN',
-    '紫色': 'PURPLE',
-    '橘色': 'ORANGE',
-    '棕色': 'BROWN',
-    '卡其': 'KHAKI',
-    '多色': 'MULTICOLOR',
+    '黑色': 'BLACK', '白色': 'WHITE', '灰色': 'GRAY', '米色': 'BEIGE',
+    '藍色': 'BLUE', '深藍': 'NAVY', '紅色': 'RED', '粉色': 'PINK',
+    '黃色': 'YELLOW', '綠色': 'GREEN', '紫色': 'PURPLE', '橘色': 'ORANGE',
+    '棕色': 'BROWN', '卡其': 'KHAKI', '多色': 'MULTICOLOR',
   };
 
   @override
@@ -77,8 +69,6 @@ class _WardrobePageState extends State<WardrobePage> {
     super.initState();
     _fetchItems();
   }
-
-  // ------------------ API Actions ------------------
 
   Future<void> _fetchItems() async {
     if (!mounted) return;
@@ -98,56 +88,53 @@ class _WardrobePageState extends State<WardrobePage> {
   }
 
   Future<void> _addItem() async {
-    final raw = await adddlg.showAddItemDialog(context);
-    if (raw == null) return;
+    // 使用深色主題 Dialog
+    // 注意：adddlg.showAddItemDialog 內部使用 showDialog，我們要在其 context 傳遞 Theme
+    // 但 showDialog 是全域的，最好的方式是確保 MaterialApp 是 dark theme (已完成)
+    // 或者在 add_item_dialog 內部使用 Theme.of(context)
+    
+    final item = await adddlg.showAddItemDialog(context);
+
+    if (item == null) return;
 
     setState(() => _isLoading = true);
     
     try {
-      String finalImageUrl = raw.imageUrl;
-
-      if (raw.imageBytes != null) {
+      String finalImageUrl = item.imageUrl;
+      if (item.imageBytes != null) {
         final filename = 'upload_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        final uploadRes = await ApiClient.I.uploadImageBytes(
-          raw.imageBytes!,
-          filename: filename,
-        );
+        final uploadRes = await ApiClient.I.uploadImageBytes(item.imageBytes!, filename: filename);
         finalImageUrl = uploadRes['url'];
       }
 
-      // ✅ 2. 關鍵修正：翻譯顏色
+      // 顏色轉換
       String? backendColor;
-      if (raw.color.isNotEmpty) {
-        final uiColor = raw.color.first; // 取得選單的中文 "黑色"
-        backendColor = _colorMap[uiColor]; // 查表轉成 "BLACK"
-        
-        // 如果查不到 (例如後端沒定義這個顏色)，印出警告以免程式崩潰
-        if (backendColor == null) {
-          debugPrint('警告：找不到顏色 "$uiColor" 的對應英文代碼，將傳送 null');
-        }
+      if (item.color.isNotEmpty) {
+        final uiColor = item.color.first;
+        backendColor = _colorMap[uiColor];
       }
 
       final body = {
-        'category': raw.category.name.toUpperCase(),
-        'subCategory': raw.subCategory,
-        'brand': raw.brand,
-        'color': backendColor, // ✅ 這裡傳送的是翻譯後的 "BLACK"
-        'season': raw.season.map((e) => e.name.toUpperCase()).toList(),
-        'occasion': raw.occasion.map((e) => e.name.toUpperCase()).toList(),
-        'fit': raw.fit.name.toUpperCase(),
-        'tags': raw.tags,
-        'favorite': raw.isFavorite,
+        'category': item.category.name.toUpperCase(),
+        'subCategory': item.subCategory,
+        'brand': item.brand,
+        'color': backendColor,
+        'season': item.season.map((e) => e.name.toUpperCase()).toList(),
+        'occasion': item.occasion.map((e) => e.name.toUpperCase()).toList(),
+        'fit': item.fit.name.toUpperCase(),
+        'tags': item.tags,
+        'favorite': item.isFavorite,
         'imageUrl': finalImageUrl,
-        'waterproof': raw.waterproof,
-        'warmth': raw.warmth,
-        'breathability': raw.breathability,
+        'waterproof': item.waterproof,
+        'warmth': item.warmth,
+        'breathability': item.breathability,
       };
 
       await ApiClient.I.createItem(body);
       
       if (mounted) {
         _snack('新增成功');
-        _fetchItems(); // ✅ 成功後重新整理列表 (這行現在會被執行了)
+        _fetchItems();
       }
     } catch (e) {
       if (mounted) _snack('新增失敗: $e', isError: true);
@@ -159,34 +146,23 @@ class _WardrobePageState extends State<WardrobePage> {
   void _snack(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg), 
-        backgroundColor: isError ? Colors.red : null,
+        content: Text(msg, style: TextStyle(color: isError ? Colors.redAccent : colors.text)),
+        backgroundColor: Colors.black.withOpacity(0.8),
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: colors.glassBorder),
+        ),
       ),
     );
   }
 
   // ------------------ RWD helpers ------------------
-  double _containerMaxWidth(double w) {
-    if (w >= 1600) return 1200;
-    if (w >= 1200) return 1100;
-    if (w >= 900) return 900;
-    if (w >= 600) return 760;
-    return w - 24;
-  }
+  double _containerMaxWidth(double w) => w >= 1600 ? 1200 : (w >= 1200 ? 1100 : (w >= 900 ? 900 : (w >= 600 ? 760 : w - 24)));
+  int _gridCols(double w) => w >= 1200 ? 4 : (w >= 900 ? 3 : 2);
+  double _tileAspectRatio(double w) => 0.75;
 
-  int _gridCols(double w) {
-    if (w >= 1200) return 4;
-    if (w >= 900) return 3;
-    return 2;
-  }
-
-  double _tileAspectRatio(double w) {
-    if (w >= 1200) return 0.78;
-    if (w >= 900) return 0.76;
-    return 0.74;
-  }
-
+  // ------------------ Derived ------------------
   List<Map<String, dynamic>> get _categories {
     int countCat(String id) => items.where((i) => i.category == id).length;
     return [
@@ -202,25 +178,24 @@ class _WardrobePageState extends State<WardrobePage> {
   List<ClothingItem> get _filteredItems =>
       selectedCategory == 'all' ? items : items.where((i) => i.category == selectedCategory).toList();
 
-  void _openFilter() async {
-    await showModalBottomSheet(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      builder: (ctx) => const _FilterSheet(),
-    );
-  }
+  // ------------------ UI ------------------
 
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
+    final isLg = w >= 1200;
 
     return Scaffold(
+      backgroundColor: Colors.transparent, // ★ S-FLOW: 透明背景
       appBar: AppBar(
-        title: const Text('衣櫃管理'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: Text('WARDROBE', style: TextStyle(color: colors.text, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        centerTitle: false,
+        iconTheme: IconThemeData(color: colors.text),
         actions: [
-          IconButton(onPressed: _fetchItems, icon: const Icon(Icons.refresh)), 
-          IconButton(onPressed: () {}, icon: const Icon(Icons.search)),
+          IconButton(onPressed: _fetchItems, icon: const Icon(Icons.refresh), color: colors.secondary), 
+          IconButton(onPressed: () {}, icon: const Icon(Icons.search), color: colors.text),
         ],
       ),
       body: Center(
@@ -229,77 +204,112 @@ class _WardrobePageState extends State<WardrobePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // 工具列 (Header)
               Padding(
-                padding: EdgeInsets.fromLTRB(
-                  w >= 1200 ? 24 : 16, 16, w >= 1200 ? 24 : 16, 0),
+                padding: EdgeInsets.fromLTRB(isLg ? 24 : 16, 16, isLg ? 24 : 16, 0),
                 child: Row(
                   children: [
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(value: 'grid', label: Text('網格'), icon: Icon(Icons.grid_view)),
-                        ButtonSegment(value: 'list', label: Text('列表'), icon: Icon(Icons.view_list)),
-                      ],
-                      selected: {viewMode},
-                      onSelectionChanged: (s) => setState(() => viewMode = s.first),
+                    // View Mode Toggle (Glass Style)
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white10),
+                      ),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.grid_view, size: 20, color: viewMode == 'grid' ? colors.primary : colors.textDim),
+                            onPressed: () => setState(() => viewMode = 'grid'),
+                            tooltip: '網格',
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.view_list, size: 20, color: viewMode == 'list' ? colors.primary : colors.textDim),
+                            onPressed: () => setState(() => viewMode = 'list'),
+                            tooltip: '列表',
+                          ),
+                        ],
+                      ),
                     ),
                     const Spacer(),
+                    // Filter Btn (Glass)
                     OutlinedButton.icon(
-                      onPressed: _openFilter,
+                      onPressed: () {
+                        // _openFilter (暫時略過)
+                      },
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: colors.glassBorder), 
+                        foregroundColor: colors.text
+                      ),
                       icon: const Icon(Icons.filter_alt_outlined, size: 18),
                       label: const Text('篩選'),
                     ),
                     const SizedBox(width: 8),
+                    // Add Btn (Solid Gold)
                     FilledButton.icon(
                       onPressed: _addItem,
                       icon: const Icon(Icons.add, size: 18),
                       label: const Text('新增'),
+                      style: FilledButton.styleFrom(backgroundColor: colors.primary, foregroundColor: Colors.black),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+
+              // 分類標籤 (Glass Chips)
               SizedBox(
                 height: 42,
                 child: ListView.separated(
-                  padding: EdgeInsets.symmetric(horizontal: w >= 1200 ? 24 : 16),
+                  padding: EdgeInsets.symmetric(horizontal: isLg ? 24 : 16),
                   scrollDirection: Axis.horizontal,
                   itemCount: _categories.length,
                   separatorBuilder: (_, __) => const SizedBox(width: 8),
                   itemBuilder: (_, i) {
                     final cat = _categories[i];
                     final bool active = selectedCategory == cat['id'];
-                    return OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        backgroundColor: active ? Theme.of(context).colorScheme.primary : null,
-                        foregroundColor: active ? Colors.white : null,
-                        side: active ? BorderSide(color: Theme.of(context).colorScheme.primary) : null,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                    return GestureDetector(
+                      onTap: () => setState(() => selectedCategory = cat['id'] as String),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: active ? colors.primary.withOpacity(0.2) : Colors.white.withOpacity(0.05),
+                          border: Border.all(color: active ? colors.primary : Colors.white10),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${cat['label']} (${cat['count']})',
+                          style: TextStyle(
+                            color: active ? colors.primary : colors.textDim,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
-                      onPressed: () => setState(() => selectedCategory = cat['id'] as String),
-                      child: Text('${cat['label']} (${cat['count']})'),
                     );
                   },
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+
+              // 內容區 (Glass Cards)
               Expanded(
                 child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? Center(child: CircularProgressIndicator(color: colors.primary))
                     : items.isEmpty
                         ? Center(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.checkroom_outlined, size: 64, color: Colors.grey),
+                                Icon(Icons.checkroom_outlined, size: 64, color: colors.textDim),
                                 const SizedBox(height: 16),
-                                Text('目前沒有衣物，請點擊新增', style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.grey)),
+                                Text('目前沒有衣物，請點擊新增', style: TextStyle(color: colors.textDim, fontSize: 16)),
                               ],
                             ),
                           )
                         : SingleChildScrollView(
-                            padding: EdgeInsets.fromLTRB(
-                              w >= 1200 ? 24 : 16, 0, w >= 1200 ? 24 : 16, 88),
+                            padding: EdgeInsets.fromLTRB(isLg ? 24 : 16, 0, isLg ? 24 : 16, 88),
                             child: viewMode == 'grid'
                               ? LayoutBuilder(builder: (context, c) {
                                   final cols = _gridCols(c.maxWidth);
@@ -313,7 +323,7 @@ class _WardrobePageState extends State<WardrobePage> {
                                       childAspectRatio: _tileAspectRatio(c.maxWidth),
                                     ),
                                     itemCount: _filteredItems.length,
-                                    itemBuilder: (_, i) => _GridCard(item: _filteredItems[i]),
+                                    itemBuilder: (_, i) => _GlassGridCard(item: _filteredItems[i], colors: colors),
                                   );
                                 })
                               : ListView.separated(
@@ -321,7 +331,7 @@ class _WardrobePageState extends State<WardrobePage> {
                                   physics: const NeverScrollableScrollPhysics(),
                                   itemCount: _filteredItems.length,
                                   separatorBuilder: (_, __) => const SizedBox(height: 10),
-                                  itemBuilder: (_, i) => _ListCard(item: _filteredItems[i]),
+                                  itemBuilder: (_, i) => _GlassListCard(item: _filteredItems[i], colors: colors),
                                 ),
                           ),
               ),
@@ -333,40 +343,50 @@ class _WardrobePageState extends State<WardrobePage> {
   }
 }
 
-class _GridCard extends StatelessWidget {
-  const _GridCard({required this.item});
+/// ------------------ S-FLOW Glass Cards ------------------
+
+class _GlassGridCard extends StatelessWidget {
   final ClothingItem item;
+  final SFlowColors colors;
+  const _GlassGridCard({required this.item, required this.colors});
+
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    return Card(
-      clipBehavior: Clip.antiAlias,
+    return GlassContainer(
+      padding: EdgeInsets.zero,
+      colors: colors,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(child: _ImageBox(url: item.imageUrl)),
+          Expanded(
+            child: Container(
+              color: Colors.black26,
+              child: item.imageUrl.isNotEmpty
+                  ? Image.network(item.imageUrl, fit: BoxFit.cover)
+                  : Icon(Icons.image, color: colors.textDim),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.all(10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item.subCategory, style: t.bodyMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(item.subCategory, style: TextStyle(color: colors.text, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
                 if (item.brand != null && item.brand!.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  Text(item.brand!, style: t.bodySmall?.copyWith(color: Colors.grey[600]), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(item.brand!, style: TextStyle(color: colors.textDim, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
                 ],
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 4,
-                  runSpacing: 4,
-                  children: [
-                    for (final tag in item.tags.take(2))
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(4)),
-                        child: Text(tag, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                      )
-                  ],
+                  children: item.tags.take(2).map((t) => Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(t, style: TextStyle(fontSize: 10, color: colors.textDim)),
+                  )).toList(),
                 ),
               ],
             ),
@@ -377,126 +397,47 @@ class _GridCard extends StatelessWidget {
   }
 }
 
-class _ListCard extends StatelessWidget {
-  const _ListCard({required this.item});
+class _GlassListCard extends StatelessWidget {
   final ClothingItem item;
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 84,
-              height: 84,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: _ImageBox(url: item.imageUrl),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item.subCategory, style: t.titleMedium),
-                  if (item.brand != null) ...[
-                    const SizedBox(height: 2),
-                    Text(item.brand!, style: t.bodySmall?.copyWith(color: Colors.grey[600])),
-                  ],
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final tag in item.tags)
-                        Chip(label: Text(tag), visualDensity: VisualDensity.compact)
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+  final SFlowColors colors;
+  const _GlassListCard({required this.item, required this.colors});
 
-class _ImageBox extends StatelessWidget {
-  const _ImageBox({required this.url});
-  final String url;
   @override
   Widget build(BuildContext context) {
-    final placeholder = Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFFF3F4F6), Color(0xFFE5E7EB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: const Center(child: Icon(Icons.image_outlined, color: Colors.black54)),
-    );
-    if (url.isEmpty) return placeholder;
-    if (url.startsWith('data:image')) {
-      try {
-        final comma = url.indexOf(',');
-        final b64 = comma >= 0 ? url.substring(comma + 1) : '';
-        final bytes = base64Decode(b64);
-        return Image.memory(bytes, fit: BoxFit.cover, errorBuilder: (_, __, ___) => placeholder);
-      } catch (_) {
-        return placeholder;
-      }
-    }
-    return Image.network(
-      url,
-      fit: BoxFit.cover,
-      loadingBuilder: (c, w, p) => p == null ? w : placeholder,
-      errorBuilder: (_, __, ___) => placeholder,
-    );
-  }
-}
-
-class _FilterSheet extends StatelessWidget {
-  const _FilterSheet();
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    Widget group(String title, List<String> chips) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: t.titleSmall),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [for (final c in chips) FilterChip(label: Text(c), onSelected: (_) {})],
-            ),
-          ],
-        );
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return GlassContainer(
+      padding: const EdgeInsets.all(12),
+      colors: colors,
+      child: Row(
         children: [
-          Row(
-            children: [
-              const Icon(Icons.filter_alt_outlined),
-              const SizedBox(width: 8),
-              Text('篩選條件', style: t.titleLarge),
-            ],
+          SizedBox(
+            width: 60, height: 60,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: item.imageUrl.isNotEmpty
+                  ? Image.network(item.imageUrl, fit: BoxFit.cover)
+                  : Container(color: Colors.white10, child: Icon(Icons.image, size: 32, color: colors.textDim)),
+            ),
           ),
-          const SizedBox(height: 16),
-          group('場合', const ['休閒', '正式', '運動']),
-          const SizedBox(height: 16),
-          group('季節', const ['春', '夏', '秋', '冬']),
-          const SizedBox(height: 16),
-          FilledButton(onPressed: () => Navigator.pop(context), child: const Text('套用')),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.subCategory, style: TextStyle(color: colors.text, fontSize: 16, fontWeight: FontWeight.bold)),
+                if (item.brand != null)
+                  Text(item.brand!, style: TextStyle(color: colors.textDim, fontSize: 12)),
+              ],
+            ),
+          ),
+          Wrap(
+            spacing: 6,
+            children: item.tags.map((t) => Chip(
+              label: Text(t, style: TextStyle(color: colors.text, fontSize: 10)),
+              backgroundColor: Colors.white10,
+              side: BorderSide.none,
+              visualDensity: VisualDensity.compact,
+            )).toList(),
+          ),
         ],
       ),
     );

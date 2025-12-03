@@ -88,7 +88,13 @@ class Comment {
 /// Community Page (S-FLOW RWD)
 /// -----------------------------
 class CommunityPage extends StatefulWidget {
-  const CommunityPage({super.key});
+  // ✅ 新增：接收全域主題顏色，確保風格一致
+  final SFlowColors? currentColors;
+
+  const CommunityPage({
+    super.key,
+    this.currentColors,
+  });
 
   @override
   State<CommunityPage> createState() => _CommunityPageState();
@@ -101,8 +107,8 @@ class _CommunityPageState extends State<CommunityPage> {
   String searchQuery = '';
   bool _isLoading = false;
 
-  // 社群頁面使用紫色主題
-  final SFlowColors colors = SFlowThemes.purple;
+  // ✅ 動態取得顏色：優先使用傳入的 currentColors，否則預設紫色
+  SFlowColors get colors => widget.currentColors ?? SFlowThemes.purple;
 
   @override
   void initState() {
@@ -208,11 +214,22 @@ class _CommunityPageState extends State<CommunityPage> {
       backgroundColor: Colors.transparent, // 重要：透明底才能顯示玻璃效果
       builder: (_) => _GlassCommentSheet(
         outfit: outfit,
-        colors: colors,
+        colors: colors, // 傳遞當前顏色
         onLikeToggle: () => _handleLike(outfit.id),
       ),
     );
   }
+
+  // ------------------ RWD helpers ------------------
+  double _containerMaxWidth(double w) {
+    if (w >= 1600) return 1400;
+    if (w >= 1200) return 1200;
+    if (w >= 900) return 980;
+    if (w >= 600) return 760;
+    return w - 24;
+  }
+
+  bool _isLg(double w) => w >= 1200;
 
   // ------------------ Derived data ------------------
   List<Outfit> get _filtered {
@@ -237,11 +254,10 @@ class _CommunityPageState extends State<CommunityPage> {
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
-    final isLg = w >= 1200;
-    final isMd = w >= 900;
+    final isLg = _isLg(w);
 
     return Scaffold(
-      backgroundColor: Colors.transparent, // ★ S-FLOW: 透明背景
+      backgroundColor: Colors.transparent, // ★ 透明，顯示底層 S-FLOW 背景
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -267,7 +283,7 @@ class _CommunityPageState extends State<CommunityPage> {
           ? Center(child: CircularProgressIndicator(color: colors.primary))
           : Center(
               child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: w >= 1600 ? 1400 : 1200),
+                constraints: BoxConstraints(maxWidth: _containerMaxWidth(w)),
                 child: SingleChildScrollView(
                   padding: EdgeInsets.fromLTRB(isLg ? 24 : 16, 0, isLg ? 24 : 16, isLg ? 24 : 88),
                   child: Column(
