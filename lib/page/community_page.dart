@@ -9,9 +9,9 @@ import 'package:flutter_application_1/page/wardrobe_page.dart' as wardrobe;
 import 'package:flutter_application_1/widgets/wardrobe_picker.dart';
 import 'package:flutter_application_1/widgets/ui/add_outfit_dialog.dart';
 
-/// -----------------------------
-/// Models (保持不變)
-/// -----------------------------
+// -----------------------------
+// Models (保持不變)
+// -----------------------------
 class OutfitItem {
   final String brand;
   final String name;
@@ -51,10 +51,8 @@ class Outfit {
         );
       }).toList();
     }
-
     String notes = json['description'] ?? json['notes'] ?? '';
     if (notes.isEmpty) notes = '分享穿搭';
-
     return Outfit(
       id: json['id'].toString(),
       userName: json['userDisplayName'] ?? 'User${json['id']}',
@@ -84,11 +82,11 @@ class Comment {
   }
 }
 
-/// -----------------------------
-/// Community Page (S-FLOW RWD)
-/// -----------------------------
+// -----------------------------
+// Community Page (S-FLOW RWD)
+// -----------------------------
 class CommunityPage extends StatefulWidget {
-  // ✅ 新增：接收全域主題顏色，確保風格一致
+  // ✅ 接收全域主題顏色
   final SFlowColors? currentColors;
 
   const CommunityPage({
@@ -107,13 +105,22 @@ class _CommunityPageState extends State<CommunityPage> {
   String searchQuery = '';
   bool _isLoading = false;
 
-  // ✅ 動態取得顏色：優先使用傳入的 currentColors，否則預設紫色
+  // ✅ 動態取得顏色：優先使用傳入的 currentColors
   SFlowColors get colors => widget.currentColors ?? SFlowThemes.purple;
 
   @override
   void initState() {
     super.initState();
     _fetchOutfits();
+  }
+
+  // ✅ 當父層傳入新的顏色時 (例如從紫變金)，觸發重繪
+  @override
+  void didUpdateWidget(CommunityPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentColors != widget.currentColors) {
+      setState(() {}); 
+    }
   }
 
   Future<void> _fetchOutfits() async {
@@ -139,58 +146,74 @@ class _CommunityPageState extends State<CommunityPage> {
     }
   }
 
-  // 新增穿搭流程
   Future<void> _startAddOutfitFlow() async {
-    final selectedItems = await Navigator.push<List<wardrobe.ClothingItem>>(
-      context,
-      MaterialPageRoute(builder: (_) => const WardrobePicker()),
-    );
+    try {
+      // 步驟 1: 開啟衣物選擇器
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const WardrobePicker()),
+      );
 
-    if (selectedItems == null || selectedItems.isEmpty) return;
-    if (!mounted) return;
+      if (result == null) return; 
+      final selectedItems = (result as List).cast<wardrobe.ClothingItem>();
+      if (selectedItems.isEmpty) return;
+      if (!mounted) return;
 
-    await showDialog(
-      context: context,
-      // 使用深色主題 Dialog
-      builder: (_) => Theme(
-        data: ThemeData.dark(),
-        child: AddOutfitDialog(
-          onSubmit: (formData) async {
-            try {
-              final outfitData = {
-                'description': formData.description,
-                'imageUrl': formData.imageUrl,
-                'tags': formData.tags,
-                'itemIds': selectedItems.map((i) => i.id).toList(),
-              };
-              await ApiClient.I.createOutfit(outfitData);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                   SnackBar(content: Text('發布成功！', style: TextStyle(color: colors.text))),
-                );
-                _fetchOutfits();
+      // 步驟 2: 開啟填寫資訊對話框
+      // ✅ 修正重點：自定義 Theme，讓 Dialog 使用 S-FLOW 的主色調
+      await showDialog(
+        context: context,
+        builder: (_) => Theme(
+          data: ThemeData.dark().copyWith(
+            primaryColor: colors.primary, // 設定主色
+            colorScheme: ColorScheme.dark(
+              primary: colors.primary,
+              secondary: colors.secondary,
+              surface: Colors.grey[900]!, // 確保 Dialog 背景不會太突兀
+            ),
+            textSelectionTheme: TextSelectionThemeData(
+              cursorColor: colors.primary,
+              selectionHandleColor: colors.primary,
+            ),
+          ),
+          child: AddOutfitDialog(
+            onSubmit: (formData) async {
+              try {
+                final outfitData = {
+                  'description': formData.description,
+                  'imageUrl': formData.imageUrl,
+                  'tags': formData.tags,
+                  'itemIds': selectedItems.map((i) => i.id).toList(),
+                };
+                await ApiClient.I.createOutfit(outfitData);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('發布成功！', style: TextStyle(color: colors.text))),
+                  );
+                  _fetchOutfits(); 
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('發布失敗: $e')));
+                }
               }
-            } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('發布失敗: $e')));
-              }
-            }
-          },
+            },
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      debugPrint('Add outfit flow error: $e');
+    }
   }
 
   Future<void> _handleLike(String id) async {
     final idx = outfits.indexWhere((o) => o.id == id);
     if (idx < 0) return;
-
     final item = outfits[idx];
     setState(() {
       item.isLiked = !item.isLiked;
       item.likes += item.isLiked ? 1 : -1;
     });
-
     try {
       if (item.isLiked) {
         await ApiClient.I.likeOutfit(id);
@@ -206,15 +229,14 @@ class _CommunityPageState extends State<CommunityPage> {
     }
   }
 
-  // 開啟玻璃風格詳情頁
   void _openDetail(Outfit outfit) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent, // 重要：透明底才能顯示玻璃效果
+      backgroundColor: Colors.transparent, 
       builder: (_) => _GlassCommentSheet(
         outfit: outfit,
-        colors: colors, // 傳遞當前顏色
+        colors: colors, // ✅ 傳遞當前顏色
         onLikeToggle: () => _handleLike(outfit.id),
       ),
     );
@@ -228,7 +250,6 @@ class _CommunityPageState extends State<CommunityPage> {
     if (w >= 600) return 760;
     return w - 24;
   }
-
   bool _isLg(double w) => w >= 1200;
 
   // ------------------ Derived data ------------------
@@ -257,7 +278,7 @@ class _CommunityPageState extends State<CommunityPage> {
     final isLg = _isLg(w);
 
     return Scaffold(
-      backgroundColor: Colors.transparent, // ★ 透明，顯示底層 S-FLOW 背景
+      backgroundColor: Colors.transparent, // ✅ 透明，顯示底層 S-FLOW 背景
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -274,7 +295,7 @@ class _CommunityPageState extends State<CommunityPage> {
           IconButton(
             icon: const Icon(Icons.add_circle_outline),
             onPressed: _startAddOutfitFlow,
-            color: colors.primary,
+            color: colors.primary, // ✅ 使用 S-FLOW Primary Color
             tooltip: '新增穿搭',
           ),
         ],
@@ -318,12 +339,10 @@ class _CommunityPageState extends State<CommunityPage> {
                                 IconButton(
                                   icon: Icon(Icons.grid_view, size: 20, color: viewMode == 'masonry' ? colors.primary : colors.textDim),
                                   onPressed: () => setState(() => viewMode = 'masonry'),
-                                  tooltip: '瀑布流',
                                 ),
                                 IconButton(
                                   icon: Icon(Icons.grid_on, size: 20, color: viewMode == 'grid' ? colors.primary : colors.textDim),
                                   onPressed: () => setState(() => viewMode = 'grid'),
-                                  tooltip: '網格',
                                 ),
                               ],
                             ),
@@ -336,15 +355,13 @@ class _CommunityPageState extends State<CommunityPage> {
                       GlassContainer(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
                         borderRadius: 16,
-                        colors: colors,
+                        colors: colors, // ✅ 傳入 S-FLOW Colors
                         child: TextField(
                           style: TextStyle(color: colors.text),
                           decoration: InputDecoration(
                             hintText: '搜尋搭配、標籤、品牌、用戶…',
                             hintStyle: TextStyle(color: colors.textDim),
                             border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
                             icon: Icon(Icons.search, color: colors.secondary),
                           ),
                           onChanged: (v) => setState(() => searchQuery = v),
@@ -405,7 +422,7 @@ class _CommunityPageState extends State<CommunityPage> {
 }
 
 // ----------------------------------------------------------------
-// S-FLOW Local Components
+// S-FLOW Local Components (保持與 S-FLOW colors 連動)
 // ----------------------------------------------------------------
 
 class _GlassTab extends StatelessWidget {
@@ -454,11 +471,10 @@ class _GlassOutfitCard extends StatelessWidget {
       onTap: onTap,
       child: GlassContainer(
         padding: EdgeInsets.zero,
-        colors: colors,
+        colors: colors, // ✅ 使用傳入的顏色
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 圖片區 (保留長寬比)
             AspectRatio(
               aspectRatio: outfit.aspect,
               child: Container(
@@ -472,7 +488,6 @@ class _GlassOutfitCard extends StatelessWidget {
                     : Icon(Icons.image, color: colors.textDim),
               ),
             ),
-            // 資訊區
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -514,7 +529,6 @@ class _GlassOutfitCard extends StatelessWidget {
   }
 }
 
-/// 留言與詳情 Sheet (玻璃風格)
 class _GlassCommentSheet extends StatefulWidget {
   final Outfit outfit;
   final SFlowColors colors;
@@ -556,10 +570,8 @@ class _GlassCommentSheetState extends State<_GlassCommentSheet> {
     if (text.isEmpty) return;
     FocusScope.of(context).unfocus();
     _commentCtrl.clear();
-
     final tempComment = Comment(id: 'temp', userName: '我', text: text);
     setState(() => _comments.add(tempComment));
-
     try {
       await ApiClient.I.postComment(widget.outfit.id, text);
       _loadComments();
@@ -577,18 +589,16 @@ class _GlassCommentSheetState extends State<_GlassCommentSheet> {
 
     return GlassContainer(
       borderRadius: 24,
-      colors: colors,
-      // 使用 margin 讓它看起來像浮動卡片
+      colors: colors, // ✅ Sheet 背景也連動主題色
       padding: EdgeInsets.zero,
       child: Container(
         height: MediaQuery.of(context).size.height * 0.85,
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.5), // 加深背景以便閱讀
+          color: Colors.black.withOpacity(0.5), 
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           children: [
-            // Handle bar
             Center(
               child: Container(
                 margin: const EdgeInsets.only(top: 12),
@@ -600,7 +610,6 @@ class _GlassCommentSheetState extends State<_GlassCommentSheet> {
               child: ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
-                  // 大圖
                   ClipRRect(
                     borderRadius: BorderRadius.circular(16),
                     child: AspectRatio(
@@ -611,8 +620,6 @@ class _GlassCommentSheetState extends State<_GlassCommentSheet> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
-                  // 作者列
                   Row(
                     children: [
                       CircleAvatar(backgroundColor: colors.primary, child: Text(outfit.userName[0], style: const TextStyle(color: Colors.black))),
@@ -643,7 +650,6 @@ class _GlassCommentSheetState extends State<_GlassCommentSheet> {
                       visualDensity: VisualDensity.compact,
                     )).toList(),
                   ),
-                  
                   if (outfit.items.isNotEmpty) ...[
                     const Divider(color: Colors.white10, height: 32),
                     Text('使用單品', style: TextStyle(color: colors.text, fontWeight: FontWeight.bold)),
@@ -653,11 +659,10 @@ class _GlassCommentSheetState extends State<_GlassCommentSheet> {
                       children: outfit.items.map((item) => Chip(
                         avatar: const Icon(Icons.checkroom, size: 14, color: Colors.black),
                         label: Text('${item.brand} ${item.name}', style: const TextStyle(color: Colors.black, fontSize: 11)),
-                        backgroundColor: colors.primary.withOpacity(0.8), // 凸顯單品
+                        backgroundColor: colors.primary.withOpacity(0.8), // ✅ 使用 Primary Color
                       )).toList(),
                     ),
                   ],
-
                   const Divider(color: Colors.white10, height: 32),
                   Text('留言', style: TextStyle(color: colors.text, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
@@ -672,17 +677,15 @@ class _GlassCommentSheetState extends State<_GlassCommentSheet> {
                     title: Text(c.userName, style: TextStyle(color: colors.text, fontWeight: FontWeight.bold, fontSize: 13)),
                     subtitle: Text(c.text, style: TextStyle(color: colors.textDim)),
                   )),
-                  
                   SizedBox(height: 60 + bottomInset),
                 ],
               ),
             ),
-            // 輸入框
             Container(
               padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomInset),
               decoration: const BoxDecoration(
                 border: Border(top: BorderSide(color: Colors.white10)),
-                color: Colors.black45, // 深色輸入區背景
+                color: Colors.black45,
               ),
               child: Row(
                 children: [

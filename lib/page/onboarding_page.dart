@@ -1,91 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../models/user_profile.dart';
+import '../theme/s_flow_design.dart'; // ✅ 1. 引入全域設計系統
 
 // ==========================================
-// 0. S-FLOW Theme & Common Widgets
-// ==========================================
-
-class ThemeColors {
-  final Color primary;
-  final Color secondary;
-  final Color glow;
-  final Color text;
-  final Color glassBorder;
-  final Color glassBg;
-  final List<Color> bgGradient;
-  final List<Color> accentGradient;
-
-  const ThemeColors({
-    required this.primary,
-    required this.secondary,
-    required this.glow,
-    required this.text,
-    required this.glassBorder,
-    required this.glassBg,
-    required this.bgGradient,
-    required this.accentGradient,
-  });
-}
-
-final _goldTheme = ThemeColors(
-  primary: const Color(0xFFFBBF24),
-  secondary: const Color(0xFFFDE68A),
-  glow: const Color.fromRGBO(251, 191, 36, 0.4),
-  text: const Color(0xFFFEF3C7),
-  glassBorder: const Color(0xFFFBBF24).withOpacity(0.3),
-  glassBg: const Color(0xFFFBBF24).withOpacity(0.05),
-  bgGradient: [const Color(0xFF0F172A), const Color(0xFF1C1917), Colors.black],
-  accentGradient: [const Color(0xFFF59E0B), const Color(0xFFFDE047)],
-);
-
-final _purpleTheme = ThemeColors(
-  primary: const Color(0xFFA78BFA),
-  secondary: const Color(0xFFF0ABFC),
-  glow: const Color.fromRGBO(167, 139, 250, 0.4),
-  text: const Color(0xFFEDE9FE),
-  glassBorder: const Color(0xFFA78BFA).withOpacity(0.3),
-  glassBg: const Color(0xFFA78BFA).withOpacity(0.05),
-  bgGradient: [const Color(0xFF0F172A), const Color(0xFF020617), Colors.black],
-  accentGradient: [const Color(0xFF7C3AED), const Color(0xFF818CF8)],
-);
-
-class GlassContainer extends StatelessWidget {
-  final Widget child;
-  final ThemeColors colors;
-  final EdgeInsetsGeometry padding;
-  const GlassContainer({
-    super.key,
-    required this.child,
-    required this.colors,
-    this.padding = const EdgeInsets.all(24),
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.4),
-            border: Border.all(color: colors.glassBorder),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(color: colors.glow.withOpacity(0.1), blurRadius: 20, spreadRadius: -5),
-            ],
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-// ==========================================
-// 1. Onboarding Page Logic
+// Onboarding Page Logic
 // ==========================================
 
 enum ColorPreferenceLevel { like, neutral, avoid, never }
@@ -159,7 +78,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
   ];
   bool _expandMoreColors = false;
 
-  ThemeColors get _currentTheme => _isPurple ? _purpleTheme : _goldTheme;
+  // ✅ 2. 使用全域 SFlowThemes
+  SFlowColors get _currentTheme => _isPurple ? SFlowThemes.purple : SFlowThemes.gold;
 
   @override
   void initState() {
@@ -198,6 +118,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
       styleWeights: _styleWeights,
       gender: _gender,
     );
+    // 注意：目前的 UserProfile 模型不包含 themePreference。
+    // 如果您希望將這裡選擇的主題(金/紫)應用到 App，您可能需要更新 onComplete 回調或 UserProfile 模型。
     widget.onComplete(profile);
   }
 
@@ -215,6 +137,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
       backgroundColor: Colors.transparent,
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 1000),
+        // ✅ 3. 使用 SFlowBackground 邏輯或漸層
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -250,6 +173,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                         const SizedBox(height: 24),
                         
                         // Main Glass Card
+                        // ✅ 4. 使用 S-FLOW 的 GlassContainer
                         GlassContainer(
                           colors: colors,
                           child: AnimatedSwitcher(
@@ -262,7 +186,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                                 if (_step == 2) _stepStyleAndColors(colors),
                                 if (_step == 3) _stepReview(colors),
                                 const SizedBox(height: 32),
-                                const Divider(color: Colors.white12),
+                                Divider(color: colors.glassBorder),
                                 const SizedBox(height: 16),
                                 _buildFooterButtons(colors),
                               ],
@@ -281,7 +205,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
-  Widget _buildBackgroundGlow(ThemeColors colors) {
+  Widget _buildBackgroundGlow(SFlowColors colors) {
     return Stack(
       children: [
         Positioned(
@@ -322,7 +246,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
-  Widget _buildStepper(ThemeColors colors) {
+  Widget _buildStepper(SFlowColors colors) {
     Widget dot(int s) {
       final isDone = s < _step;
       final isNow = s == _step;
@@ -331,9 +255,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
         width: isNow ? 32 : 12,
         height: 12,
         decoration: BoxDecoration(
-          color: isDone || isNow ? colors.primary : Colors.white12,
+          color: isDone || isNow ? colors.primary : colors.text.withOpacity(0.1),
           borderRadius: BorderRadius.circular(6),
-          boxShadow: isNow ? [BoxShadow(color: colors.glow, blurRadius: 8)] : null,
+          boxShadow: isNow ? [BoxShadow(color: colors.primary.withOpacity(0.4), blurRadius: 8)] : null,
         ),
       );
     }
@@ -349,15 +273,15 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   // -------------------- Step 1: Basic Info --------------------
-  Widget _stepBasic(ThemeColors colors) {
+  Widget _stepBasic(SFlowColors colors) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('WELCOME TO S-FLOW', style: TextStyle(color: colors.primary, fontWeight: FontWeight.bold, letterSpacing: 2)),
         const SizedBox(height: 8),
-        const Text('建立您的個人檔案', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+        Text('建立您的個人檔案', style: TextStyle(color: colors.text, fontSize: 24, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
-        const Text('讓我們了解您的身形數據，AI 將為您提供最精準的穿搭建議。', style: TextStyle(color: Colors.white54)),
+        Text('讓我們了解您的身形數據，AI 將為您提供最精準的穿搭建議。', style: TextStyle(color: colors.textDim)),
         
         const SizedBox(height: 32),
         _sectionHeader('GENDER', colors),
@@ -419,13 +343,13 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   // -------------------- Step 2: Style & Colors --------------------
-  Widget _stepStyleAndColors(ThemeColors colors) {
+  Widget _stepStyleAndColors(SFlowColors colors) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('STYLE & COLORS', style: TextStyle(color: colors.primary, fontWeight: FontWeight.bold, letterSpacing: 2)),
         const SizedBox(height: 8),
-        const Text('風格偏好設定', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+        Text('風格偏好設定', style: TextStyle(color: colors.text, fontSize: 24, fontWeight: FontWeight.bold)),
         
         const SizedBox(height: 32),
         Row(
@@ -447,8 +371,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
             return Chip(
               backgroundColor: colors.primary.withOpacity(0.2),
               side: BorderSide(color: colors.primary.withOpacity(0.5)),
-              label: Text(style.label, style: const TextStyle(color: Colors.white)),
-              deleteIcon: const Icon(Icons.close, size: 14, color: Colors.white70),
+              label: Text(style.label, style: TextStyle(color: colors.text)),
+              deleteIcon: Icon(Icons.close, size: 14, color: colors.textDim),
               onDeleted: () {
                 if (_selectedStyleIds.length > 1) {
                   setState(() {
@@ -466,9 +390,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: colors.glassBg,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white10),
+            border: Border.all(color: colors.glassBorder),
           ),
           child: Column(
             children: [
@@ -476,21 +400,21 @@ class _OnboardingPageState extends State<OnboardingPage> {
               Wrap(
                 spacing: 16,
                 children: [
-                  _legendItem(Icons.favorite, Colors.pink, '喜歡'),
-                  _legendItem(Icons.remove, Colors.grey, '普通'),
-                  _legendItem(Icons.block, Colors.orange, '少穿'),
-                  if (_showNever) _legendItem(Icons.shield, Colors.red, '絕不'),
+                  _legendItem(Icons.favorite, Colors.pink, '喜歡', colors),
+                  _legendItem(Icons.remove, Colors.grey, '普通', colors),
+                  _legendItem(Icons.block, Colors.orange, '少穿', colors),
+                  if (_showNever) _legendItem(Icons.shield, Colors.red, '絕不', colors),
                 ],
               ),
               const SizedBox(height: 8),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 activeColor: colors.primary,
-                title: const Text('顯示「絕不建議」選項', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                title: Text('顯示「絕不建議」選項', style: TextStyle(color: colors.textDim, fontSize: 14)),
                 value: _showNever,
                 onChanged: (v) => setState(() => _showNever = v),
               ),
-              const Divider(color: Colors.white10),
+              Divider(color: colors.glassBorder),
               const SizedBox(height: 8),
               
               // Color Grid
@@ -522,7 +446,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   // -------------------- Step 3: Review --------------------
-  Widget _stepReview(ThemeColors colors) {
+  Widget _stepReview(SFlowColors colors) {
     final styles = _selectedStyleIds
         .map((id) => (_allStyles.firstWhere((s) => s.id == id, orElse: () => StyleOption(id: id, label: id)).label, _styleWeights[id] ?? 0))
         .toList()..sort((a, b) => b.$2.compareTo(a.$2));
@@ -532,7 +456,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
       children: [
         Text('REVIEW', style: TextStyle(color: colors.primary, fontWeight: FontWeight.bold, letterSpacing: 2)),
         const SizedBox(height: 8),
-        const Text('確認您的設定', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+        Text('確認您的設定', style: TextStyle(color: colors.text, fontSize: 24, fontWeight: FontWeight.bold)),
         
         const SizedBox(height: 32),
         _sectionHeader('SUMMARY', colors),
@@ -541,15 +465,15 @@ class _OnboardingPageState extends State<OnboardingPage> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: colors.glassBg,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white10),
+            border: Border.all(color: colors.glassBorder),
           ),
           child: Column(
             children: [
-              _summaryRow('身高 / 體重', '$_height cm / $_weight kg'),
-              const Divider(color: Colors.white10, height: 24),
-              _summaryRow('版型 / 通勤', '${_fitPreference.toUpperCase()} / ${_commuteMethod.toUpperCase()}'),
+              _summaryRow('身高 / 體重', '$_height cm / $_weight kg', colors),
+              Divider(color: colors.glassBorder, height: 24),
+              _summaryRow('版型 / 通勤', '${_fitPreference.toUpperCase()} / ${_commuteMethod.toUpperCase()}', colors),
             ],
           ),
         ),
@@ -559,28 +483,28 @@ class _OnboardingPageState extends State<OnboardingPage> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: colors.glassBg,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white10),
+            border: Border.all(color: colors.glassBorder),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('風格權重分佈', style: TextStyle(color: Colors.white70, fontSize: 12)),
+              Text('風格權重分佈', style: TextStyle(color: colors.textDim, fontSize: 12)),
               const SizedBox(height: 12),
               ...styles.map((e) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
-                    Expanded(flex: 3, child: Text(e.$1, style: const TextStyle(color: Colors.white))),
+                    Expanded(flex: 3, child: Text(e.$1, style: TextStyle(color: colors.text))),
                     Expanded(
                       flex: 7,
                       child: Stack(
                         children: [
-                          Container(height: 6, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(3))),
+                          Container(height: 6, decoration: BoxDecoration(color: colors.glassBorder, borderRadius: BorderRadius.circular(3))),
                           Container(
                             height: 6, 
-                            width: (e.$2 * 2.0).clamp(0, 200), // simple visualization
+                            width: (e.$2 * 2.0).clamp(0, 200),
                             decoration: BoxDecoration(color: colors.primary, borderRadius: BorderRadius.circular(3)),
                           ),
                         ],
@@ -602,29 +526,29 @@ class _OnboardingPageState extends State<OnboardingPage> {
   // Helper Widgets
   // ==========================================
 
-  Widget _sectionHeader(String title, ThemeColors colors) {
+  Widget _sectionHeader(String title, SFlowColors colors) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Text(title, style: TextStyle(color: colors.secondary.withOpacity(0.7), fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1)),
     );
   }
 
-  Widget _selectableBtn(String label, bool selected, VoidCallback onTap, ThemeColors colors) {
+  Widget _selectableBtn(String label, bool selected, VoidCallback onTap, SFlowColors colors) {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          color: selected ? colors.primary.withOpacity(0.2) : Colors.white.withOpacity(0.05),
-          border: Border.all(color: selected ? colors.primary : Colors.white10),
+          color: selected ? colors.primary.withOpacity(0.2) : colors.glassBg,
+          border: Border.all(color: selected ? colors.primary : colors.glassBorder),
           borderRadius: BorderRadius.circular(12),
-          boxShadow: selected ? [BoxShadow(color: colors.glow.withOpacity(0.5), blurRadius: 8)] : null,
+          boxShadow: selected ? [BoxShadow(color: colors.primary.withOpacity(0.4), blurRadius: 8)] : null,
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? colors.primary : Colors.white70,
+            color: selected ? colors.primary : colors.textDim,
             fontWeight: selected ? FontWeight.bold : FontWeight.normal,
           ),
         ),
@@ -632,24 +556,25 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
-  Widget _glassInput(String label, int value, ValueChanged<int> onChanged, ThemeColors colors) {
+  Widget _glassInput(String label, int value, ValueChanged<int> onChanged, SFlowColors colors) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        Text(label, style: TextStyle(color: colors.textDim, fontSize: 12)),
         const SizedBox(height: 6),
         Expanded(
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
+              color: colors.glassBg,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white10),
+              border: Border.all(color: colors.glassBorder),
             ),
             alignment: Alignment.center,
             child: TextFormField(
               initialValue: value.toString(),
               keyboardType: TextInputType.number,
-              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              // ✅ 修正：使用 theme text color，避免在淺色背景下看不見
+              style: TextStyle(color: colors.text, fontSize: 18, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
               decoration: const InputDecoration(border: InputBorder.none),
               onChanged: (v) => onChanged(int.tryParse(v) ?? value),
@@ -660,10 +585,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
-  Widget _colorSelector((String id, String label, Color color) item, ThemeColors colors) {
+  Widget _colorSelector((String id, String label, Color color) item, SFlowColors colors) {
     final pref = _colorPrefs[item.$1] ?? ColorPreferenceLevel.neutral;
     
-    // Cycle next preference
     void cycle() {
       final next = switch (pref) {
         ColorPreferenceLevel.neutral => ColorPreferenceLevel.like,
@@ -675,7 +599,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
     }
 
     IconData? icon;
-    Color iconColor = Colors.white;
+    Color iconColor = colors.text;
     if (pref == ColorPreferenceLevel.like) { icon = Icons.favorite; iconColor = Colors.pink; }
     if (pref == ColorPreferenceLevel.avoid) { icon = Icons.block; iconColor = Colors.orange; }
     if (pref == ColorPreferenceLevel.never) { icon = Icons.shield; iconColor = Colors.red; }
@@ -685,9 +609,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          color: Colors.black26,
+          color: Colors.black26, // Color chip background usually stays dark
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: pref == ColorPreferenceLevel.neutral ? Colors.white10 : iconColor.withOpacity(0.5)),
+          border: Border.all(color: pref == ColorPreferenceLevel.neutral ? colors.glassBorder : iconColor.withOpacity(0.5)),
         ),
         child: Row(
           children: [
@@ -700,7 +624,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
               ),
             ),
             const SizedBox(width: 8),
-            Expanded(child: Text(item.$2, style: const TextStyle(color: Colors.white70, fontSize: 12))),
+            Expanded(child: Text(item.$2, style: TextStyle(color: colors.text.withOpacity(0.7), fontSize: 12))),
             if (icon != null) Icon(icon, size: 16, color: iconColor),
           ],
         ),
@@ -708,7 +632,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
-  Widget _legendItem(IconData icon, Color color, String label) {
+  Widget _legendItem(IconData icon, Color color, String label, SFlowColors colors) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -719,17 +643,17 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
-  Widget _summaryRow(String label, String value) {
+  Widget _summaryRow(String label, String value, SFlowColors colors) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: Colors.white54)),
-        Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        Text(label, style: TextStyle(color: colors.textDim)),
+        Text(value, style: TextStyle(color: colors.text, fontWeight: FontWeight.bold)),
       ],
     );
   }
 
-  Widget _buildFooterButtons(ThemeColors colors) {
+  Widget _buildFooterButtons(SFlowColors colors) {
     return Row(
       children: [
         if (_step > 1)
@@ -749,13 +673,13 @@ class _OnboardingPageState extends State<OnboardingPage> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: colors.accentGradient),
+              gradient: LinearGradient(colors: [colors.primary, colors.secondary]),
               borderRadius: BorderRadius.circular(12),
-              boxShadow: [BoxShadow(color: colors.glow, blurRadius: 12, offset: const Offset(0, 4))],
+              boxShadow: [BoxShadow(color: colors.primary.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))],
             ),
             child: Text(
               _step == 3 ? 'COMPLETE' : 'NEXT',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1),
+              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, letterSpacing: 1),
             ),
           ),
         ),
@@ -763,7 +687,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
-  void _openStyleDialog(BuildContext context, ThemeColors colors) {
+  void _openStyleDialog(BuildContext context, SFlowColors colors) {
     _tempSelectedStyleIds = [..._selectedStyleIds];
     showDialog(
       context: context,
@@ -782,14 +706,14 @@ class _OnboardingPageState extends State<OnboardingPage> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: _newStyleCtrl,
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: colors.text),
                       decoration: InputDecoration(
                         hintText: '新增自訂風格...',
-                        hintStyle: const TextStyle(color: Colors.white30),
-                        enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                        hintStyle: TextStyle(color: colors.textDim),
+                        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: colors.glassBorder)),
                         focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: colors.primary)),
                         suffixIcon: IconButton(
-                          icon: const Icon(Icons.add, color: Colors.white),
+                          icon: Icon(Icons.add, color: colors.text),
                           onPressed: () {
                             if (_newStyleCtrl.text.isNotEmpty) {
                               setState(() {
@@ -820,10 +744,10 @@ class _OnboardingPageState extends State<OnboardingPage> {
                                   selected ? _tempSelectedStyleIds.remove(s.id) : _tempSelectedStyleIds.add(s.id);
                                 });
                               },
-                              backgroundColor: Colors.black26,
+                              backgroundColor: colors.glassBg,
                               selectedColor: colors.primary.withOpacity(0.3),
                               checkmarkColor: colors.primary,
-                              labelStyle: TextStyle(color: selected ? colors.primary : Colors.white70),
+                              labelStyle: TextStyle(color: selected ? colors.primary : colors.textDim),
                               side: BorderSide.none,
                             );
                           }).toList(),
@@ -836,7 +760,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: const Text('取消', style: TextStyle(color: Colors.white54)),
+                          child: Text('取消', style: TextStyle(color: colors.textDim)),
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton(

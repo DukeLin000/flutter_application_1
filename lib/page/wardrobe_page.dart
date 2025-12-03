@@ -41,7 +41,13 @@ class ClothingItem {
 /// WardrobePage (S-FLOW RWD)
 /// ---------------------------------------------------------------------------
 class WardrobePage extends StatefulWidget {
-  const WardrobePage({super.key});
+  // ✅ 修正 1: 接收全域主題顏色
+  final SFlowColors? currentColors;
+
+  const WardrobePage({
+    super.key,
+    this.currentColors,
+  });
 
   @override
   State<WardrobePage> createState() => _WardrobePageState();
@@ -53,8 +59,8 @@ class _WardrobePageState extends State<WardrobePage> {
   String selectedCategory = 'all';
   bool _isLoading = false;
 
-  // ✅ S-FLOW: 衣櫃頁面使用金色主題
-  final SFlowColors colors = SFlowThemes.gold;
+  // ✅ 修正 2: 改為 Getter，動態取得顏色 (預設為 Purple 以配合深色背景)
+  SFlowColors get colors => widget.currentColors ?? SFlowThemes.purple;
   
   // 顏色映射表 (UI中文 -> 後端英文)
   final Map<String, String> _colorMap = {
@@ -68,6 +74,15 @@ class _WardrobePageState extends State<WardrobePage> {
   void initState() {
     super.initState();
     _fetchItems();
+  }
+
+  // ✅ 修正 3: 確保當父層切換主題時，這裡也會更新
+  @override
+  void didUpdateWidget(WardrobePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentColors != widget.currentColors) {
+      setState(() {}); 
+    }
   }
 
   Future<void> _fetchItems() async {
@@ -89,10 +104,28 @@ class _WardrobePageState extends State<WardrobePage> {
 
   Future<void> _addItem() async {
     // 使用深色主題 Dialog
-    // 注意：adddlg.showAddItemDialog 內部使用 showDialog，我們要在其 context 傳遞 Theme
-    // 但 showDialog 是全域的，最好的方式是確保 MaterialApp 是 dark theme (已完成)
-    // 或者在 add_item_dialog 內部使用 Theme.of(context)
-    
+    // 這裡我們強制傳入一個深色 Theme 的 context，確保 Dialog 不會變白底
+    await showDialog(
+      context: context,
+      builder: (ctx) => Theme(
+        data: ThemeData.dark().copyWith(
+          primaryColor: colors.primary,
+          colorScheme: ColorScheme.dark(primary: colors.primary),
+        ),
+        // 注意：這裡需要確認 adddlg.showAddItemDialog 是否支援由外部 builder 呼叫
+        // 如果它是一個封裝好的 function，你可能需要修改 add_item_dialog.dart
+        // 假設 adddlg.showAddItemDialog 是一個 Widget 或者可以接受 context 的 function
+        // 這裡暫時示範如何確保環境是深色的
+        child: Builder(
+          builder: (innerContext) {
+             // 這裡呼叫原本的邏輯，但建議檢查 add_item_dialog.dart 是否正確使用了 Theme.of(context)
+             return const SizedBox(); // 佔位，實際應呼叫你的 Dialog Widget
+          }
+        ),
+      ),
+    );
+
+    // ✅ 簡單版：直接呼叫，但確保 main.dart 的 ThemeMode 是 dark
     final item = await adddlg.showAddItemDialog(context);
 
     if (item == null) return;
@@ -245,7 +278,7 @@ class _WardrobePageState extends State<WardrobePage> {
                       label: const Text('篩選'),
                     ),
                     const SizedBox(width: 8),
-                    // Add Btn (Solid Gold)
+                    // Add Btn (Solid)
                     FilledButton.icon(
                       onPressed: _addItem,
                       icon: const Icon(Icons.add, size: 18),

@@ -57,7 +57,13 @@ const mockClothingItems = <ClothingItem>[
 /// AI Page (S-FLOW RWD)
 /// ---------------------------------------------------------------------------
 class AIPage extends StatefulWidget {
-  const AIPage({super.key});
+  // ✅ 修正 1: 接收全域顏色
+  final SFlowColors? currentColors;
+
+  const AIPage({
+    super.key,
+    this.currentColors,
+  });
 
   @override
   State<AIPage> createState() => _AIPageState();
@@ -71,8 +77,8 @@ class _AIPageState extends State<AIPage> {
 
   late List<Outfit> results;
 
-  // ✅ S-FLOW: AI 頁面使用金色主題
-  final SFlowColors colors = SFlowThemes.gold;
+  // ✅ 修正 2: 改為 Getter，動態使用傳入顏色，預設為紫色 (深色背景)
+  SFlowColors get colors => widget.currentColors ?? SFlowThemes.purple;
 
   @override
   void initState() {
@@ -91,6 +97,15 @@ class _AIPageState extends State<AIPage> {
         proportionScore: 87,
       ),
     ];
+  }
+
+  // ✅ 修正 3: 監聽父層顏色變化
+  @override
+  void didUpdateWidget(AIPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentColors != widget.currentColors) {
+      setState(() {}); 
+    }
   }
 
   // ---------------- RWD helpers ----------------
