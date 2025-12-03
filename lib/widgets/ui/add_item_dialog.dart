@@ -416,7 +416,7 @@ class _AddItemDialogState extends State<_AddItemDialog> {
               _Section(
                 title: '類別 *',
                 child: DropdownButtonFormField<Category>(
-                  value: _category,
+                  initialValue: _category,
                   items: _categoryOptions
                       .map((e) => DropdownMenuItem<Category>(
                             value: e['value'] as Category,

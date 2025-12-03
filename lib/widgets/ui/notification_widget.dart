@@ -71,7 +71,7 @@ class NotificationWidget extends StatelessWidget {
 
     final month = timestamp.month;
     final day = timestamp.day;
-    return '${month}月$day日';
+    return '$month月$day日';
   }
 
   @override

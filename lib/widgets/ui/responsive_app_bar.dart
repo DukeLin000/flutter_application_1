@@ -196,7 +196,7 @@ class _SearchField extends StatelessWidget {
           ),
           hintText: '搜尋穿搭、品牌、用戶…',
           filled: true,
-          fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+          fillColor: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
             borderSide: BorderSide(color: theme.dividerColor),

@@ -1,9 +1,7 @@
-// 檔案位置：lib/widgets/ui/wardrobe_picker.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/api_client.dart';
-// ✅ 這裡引用 wardrobe_page.dart 是為了「共用」ClothingItem 這個模型定義
-// 這樣我們就不用重複寫 class ClothingItem {...}
+// 引用 WardrobePage 是為了使用裡面的 ClothingItem 模型定義
+// 這樣我們就不用重複寫 class ClothingItem
 import 'package:flutter_application_1/page/wardrobe_page.dart'; 
 
 class WardrobePicker extends StatefulWidget {
@@ -15,7 +13,7 @@ class WardrobePicker extends StatefulWidget {
 
 class _WardrobePickerState extends State<WardrobePicker> {
   List<ClothingItem> _items = [];
-  final Set<String> _selectedIds = {}; // ✅ 這是 Picker 獨有的：記錄選了哪些 ID
+  final Set<String> _selectedIds = {}; // 記錄選了哪些衣服的 ID
   bool _isLoading = true;
 
   @override
@@ -29,6 +27,7 @@ class _WardrobePickerState extends State<WardrobePicker> {
       final list = await ApiClient.I.listItems();
       if (mounted) {
         setState(() {
+          // 使用 ClothingItem.fromJson 將資料轉為物件
           _items = list.map((json) => ClothingItem.fromJson(json)).toList();
           _isLoading = false;
         });
@@ -48,10 +47,11 @@ class _WardrobePickerState extends State<WardrobePicker> {
         title: const Text('選擇搭配單品'),
         actions: [
           TextButton(
+            // 如果沒選任何衣服，按鈕失效
             onPressed: _selectedIds.isEmpty
                 ? null
                 : () {
-                    // ✅ 按下後，篩選出被選中的物件，並回傳給上一頁 (CommunityPage)
+                    // 篩選出被選中的 ClothingItem 物件，並回傳給上一頁
                     final selectedItems = _items
                         .where((i) => _selectedIds.contains(i.id))
                         .toList();
@@ -86,7 +86,7 @@ class _WardrobePickerState extends State<WardrobePicker> {
                     
                     return InkWell(
                       onTap: () {
-                        // ✅ 點擊時切換勾選狀態
+                        // 點擊切換勾選狀態
                         setState(() {
                           if (isSelected) {
                             _selectedIds.remove(item.id);
@@ -97,7 +97,7 @@ class _WardrobePickerState extends State<WardrobePicker> {
                       },
                       child: Container(
                         decoration: BoxDecoration(
-                          // ✅ 選中時顯示藍色邊框
+                          // 選中時顯示藍色邊框
                           border: isSelected
                               ? Border.all(color: Colors.blue, width: 3)
                               : Border.all(color: Colors.grey.shade300),
@@ -112,15 +112,16 @@ class _WardrobePickerState extends State<WardrobePicker> {
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
+                                  // 顯示圖片
                                   item.imageUrl.isNotEmpty
                                       ? Image.network(
                                           item.imageUrl,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (_,__,___) => Container(color: Colors.grey[200]),
+                                          errorBuilder: (_,__,___) => Container(color: Colors.grey[200], child: const Icon(Icons.image_not_supported)),
                                         )
                                       : Container(color: Colors.grey[200], child: const Icon(Icons.image)),
                                   
-                                  // ✅ 選中時顯示右上角勾勾
+                                  // 選中時顯示右上角勾勾
                                   if (isSelected)
                                     Align(
                                       alignment: Alignment.topRight,

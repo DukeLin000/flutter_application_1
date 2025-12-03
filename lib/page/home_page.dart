@@ -1,8 +1,9 @@
-// lib/page/home_page.dart
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/api_client.dart';
+import 'package:flutter_application_1/theme/s_flow_design.dart'; // ✅ 引入設計系統
 
-// ✅ 新增：通知 widget
+// ✅ 引入通知 widget (若尚未建立 S-FLOW 版通知，這裡暫時使用；建議後續也改為玻璃風格)
 import 'package:flutter_application_1/widgets/ui/notification_widget.dart';
 
 /// ---------------------------------------------------------------------------
@@ -13,18 +14,19 @@ class Outfit {
   final String title;
   final String subtitle; // e.g. weather, temp
   final List<String> tags; // e.g. style chips
+  final String? imageUrl; // ✅ 支援圖片
 
   Outfit({
     required this.id,
     required this.title,
     required this.subtitle,
     this.tags = const [],
+    this.imageUrl,
   });
 
   factory Outfit.fromJson(Map<String, dynamic> json) {
     final rawId = json['id'];
-    final id =
-        rawId?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
+    final id = rawId?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
 
     String notes = json['notes']?.toString() ?? '';
     if (notes.trim().isEmpty) notes = '我的穿搭 #$id';
@@ -32,24 +34,30 @@ class Outfit {
     return Outfit(
       id: id,
       title: notes,
-      subtitle: '24°C · 舒適', // TODO: 後端補 weather 後改成動態
-      tags: const ['休閒', '日常'], // TODO: 後端補 tags 後改成動態
+      subtitle: '24°C · 舒適', 
+      tags: const ['休閒', '日常'],
+      imageUrl: json['imageUrl'], 
     );
   }
 }
 
 /// ---------------------------------------------------------------------------
-/// HomePage
+/// HomePage (S-FLOW Redesign)
 /// ---------------------------------------------------------------------------
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
-    required this.hasItems, // TODO: 未來可移除，以 API 為主
+    required this.hasItems,
     required this.onAddItems,
+    // ✅ 接收來自 main.dart 的主題控制
+    this.onThemeToggle,
+    this.currentColors,
   });
 
   final bool hasItems;
   final VoidCallback onAddItems;
+  final VoidCallback? onThemeToggle;
+  final SFlowColors? currentColors;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -58,18 +66,20 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   List<Outfit> outfits = [];
   bool _isLoading = false;
-  bool _didLoadOnce = false; // ✅ 用來判斷是否需要顯示錯誤提示
+  bool _didLoadOnce = false;
 
-  // ✅ 新增：通知狀態
   List<AppNotification> _notifications = [];
   bool _isNotiLoading = false;
   bool _didLoadNotiOnce = false;
+
+  // 取得當前主題顏色 (若未傳入則使用預設金色)
+  SFlowColors get colors => widget.currentColors ?? SFlowThemes.gold;
 
   @override
   void initState() {
     super.initState();
     _fetchOutfits();
-    _fetchNotifications(); // ✅ 一起抓通知
+    _fetchNotifications();
   }
 
   Future<void> _fetchOutfits() async {
@@ -78,16 +88,14 @@ class _HomePageState extends State<HomePage> {
 
     try {
       final list = await ApiClient.I.listOutfits();
-
       if (!mounted) return;
       setState(() {
         outfits = list.map((json) => Outfit.fromJson(json)).toList();
       });
     } catch (e) {
       debugPrint('Home fetch error: $e');
-
       if (_didLoadOnce && mounted && outfits.isEmpty) {
-        _snack('目前無法取得穿搭，請稍後再試');
+        // 暫時不顯示 snack bar 避免干擾，或改用其他方式提示
       }
     } finally {
       _didLoadOnce = true;
@@ -95,19 +103,12 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// ✅ 新增：抓通知（目前先 mock，等你後端通知 API 好再換）
   Future<void> _fetchNotifications() async {
     if (!mounted) return;
     setState(() => _isNotiLoading = true);
 
     try {
-      // TODO: 後端完成後換成真的 API，例如：
-      // final list = await ApiClient.I.listNotifications();
-      // setState(() {
-      //   _notifications = list.map((json) => AppNotification.fromJson(json)).toList();
-      // });
-
-      // ---- 暫時 mock ----
+      // Mock notifications (模擬資料)
       await Future.delayed(const Duration(milliseconds: 200));
       final now = DateTime.now();
       final mock = <AppNotification>[
@@ -131,10 +132,6 @@ class _HomePageState extends State<HomePage> {
       setState(() => _notifications = mock);
     } catch (e) {
       debugPrint('Notification fetch error: $e');
-
-      if (_didLoadNotiOnce && mounted) {
-        _snack('目前無法取得通知，請稍後再試');
-      }
     } finally {
       _didLoadNotiOnce = true;
       if (mounted) setState(() => _isNotiLoading = false);
@@ -142,14 +139,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _handleRefresh() {
-    _snack('正在更新穿搭建議...');
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('正在更新穿搭建議...', style: TextStyle(color: colors.text))));
     _fetchOutfits();
   }
 
-  void _handleSave(String id) => _snack('穿搭已儲存到收藏');
-  void _handleShare(String id) => _snack('穿搭分享連結已複製');
+  void _handleSave(String id) {
+     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('穿搭已儲存到收藏', style: TextStyle(color: colors.text))));
+  }
+  
+  void _handleShare(String id) {
+     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('穿搭分享連結已複製', style: TextStyle(color: colors.text))));
+  }
 
-  // ✅ 新增：通知已讀 / 關閉
   void _dismissNoti(String id) {
     setState(() {
       _notifications = _notifications.map((n) {
@@ -170,25 +171,21 @@ class _HomePageState extends State<HomePage> {
   void _snack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+      SnackBar(
+        content: Text(msg, style: TextStyle(color: colors.primary)),
+        backgroundColor: Colors.black.withOpacity(0.8),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: colors.glassBorder),
+        ),
+      ),
     );
   }
 
   // ----- RWD helpers -----
-  double _containerMaxWidth(double w) {
-    if (w >= 1600) return 1400;
-    if (w >= 1200) return 1200;
-    if (w >= 900) return 980;
-    if (w >= 600) return 760;
-    return w - 24;
-  }
-
-  int _gridCols(double w) {
-    if (w >= 1200) return 3;
-    if (w >= 900) return 2;
-    return 1;
-  }
-
+  double _containerMaxWidth(double w) => w >= 1600 ? 1400 : (w >= 1200 ? 1200 : (w >= 900 ? 980 : (w >= 600 ? 760 : w - 24)));
+  int _gridCols(double w) => w >= 1200 ? 3 : (w >= 900 ? 2 : 1);
   bool _isLarge(double w) => w >= 1200;
 
   @override
@@ -198,101 +195,163 @@ class _HomePageState extends State<HomePage> {
         final w = constraints.maxWidth;
         final isLarge = _isLarge(w);
 
-        final showEmptyState =
-            !_isLoading && outfits.isEmpty && !widget.hasItems;
-
-        if (showEmptyState) {
-          return _buildEmptyState(w, isLarge);
-        }
-
         return Scaffold(
+          backgroundColor: Colors.transparent, // ★ 透明背景
           appBar: AppBar(
-            title: const Text('每日穿搭建議'),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            title: Row(
+              children: [
+                // S-FLOW Logo (點擊切換主題)
+                GestureDetector(
+                  onTap: widget.onThemeToggle,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(colors: colors.accentGradient),
+                      boxShadow: [BoxShadow(color: colors.glow, blurRadius: 8)],
+                    ),
+                    child: const Center(
+                      child: Text('S', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'TODAY\'S PICK',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold, 
+                    fontSize: 20, 
+                    color: colors.text,
+                    letterSpacing: 1.2,
+                    shadows: [Shadow(color: colors.glow, blurRadius: 10)],
+                  ),
+                ),
+              ],
+            ),
             actions: [
               if (!isLarge)
                 IconButton(
                   tooltip: '重新生成',
                   onPressed: _handleRefresh,
-                  icon: const Icon(Icons.shuffle_rounded),
+                  icon: Icon(Icons.shuffle_rounded, color: colors.secondary),
                 ),
-              const _SettingsButton(),
+              IconButton(
+                tooltip: '設定',
+                icon: Icon(Icons.settings_outlined, color: colors.text),
+                onPressed: () {}, // TODO: Go to settings
+              ),
             ],
           ),
           body: _isLoading
-              ? const Center(child: CircularProgressIndicator())
+              ? Center(child: CircularProgressIndicator(color: colors.primary))
               : RefreshIndicator(
+                  color: colors.primary,
+                  backgroundColor: Colors.black,
                   onRefresh: () async {
                     await _fetchOutfits();
                     await _fetchNotifications();
                   },
                   child: Center(
                     child: ConstrainedBox(
-                      constraints:
-                          BoxConstraints(maxWidth: _containerMaxWidth(w)),
+                      constraints: BoxConstraints(maxWidth: _containerMaxWidth(w)),
                       child: SingleChildScrollView(
-                        physics:
-                            const AlwaysScrollableScrollPhysics(),
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: EdgeInsets.fromLTRB(
-                          isLarge ? 24 : 16,
-                          16,
-                          isLarge ? 24 : 16,
-                          isLarge ? 24 : 88,
+                          isLarge ? 24 : 16, 16, isLarge ? 24 : 16, isLarge ? 24 : 88,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            // ✅ 新增：通知區塊（有未讀才顯示）
-                            if (!_isNotiLoading)
-                              NotificationWidget(
-                                notifications: _notifications,
-                                onViewAll: () {
-                                  // TODO: 之後導到通知頁
-                                  _snack('開啟通知列表（待實作）');
-                                },
-                                onDismiss: _dismissNoti,
+                            // 通知區塊 (使用 GlassContainer 包覆)
+                            if (!_isNotiLoading && _notifications.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: GlassContainer(
+                                  colors: colors,
+                                  padding: EdgeInsets.zero, 
+                                  child: NotificationWidget(
+                                    notifications: _notifications,
+                                    onViewAll: () => _snack('開啟通知列表'),
+                                    onDismiss: _dismissNoti,
+                                  ),
+                                ),
                               ),
 
-                            const WeatherBar(),
+                            // 天氣欄
+                            GlassWeatherBar(colors: colors),
                             const SizedBox(height: 16),
 
-                            if (isLarge) _DesktopStats(),
+                            if (isLarge) DesktopStatsSection(colors: colors),
                             if (isLarge) const SizedBox(height: 16),
 
+                            // 標題區
                             Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.spaceBetween,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
-                                const _TitleWithSub(
-                                  title: '今日推薦穿搭',
-                                  subtitle: '來自你的衣櫃與 AI 建議',
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'AI 推薦穿搭',
+                                      style: TextStyle(
+                                        fontSize: 18, 
+                                        fontWeight: FontWeight.w600,
+                                        color: colors.text,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '來自你的衣櫃與風格分析',
+                                      style: TextStyle(color: colors.textDim, fontSize: 12),
+                                    ),
+                                  ],
                                 ),
                                 if (isLarge)
-                                  OutlinedButton.icon(
+                                  GlassButton(
                                     onPressed: _handleRefresh,
-                                    icon: const Icon(
-                                      Icons.shuffle_rounded,
-                                      size: 18,
-                                    ),
-                                    label: const Text('重新生成'),
+                                    icon: Icons.shuffle_rounded,
+                                    label: '重新生成',
+                                    colors: colors,
                                   ),
                               ],
                             ),
                             const SizedBox(height: 12),
 
                             if (outfits.isEmpty)
-                              const Padding(
-                                padding: EdgeInsets.all(32.0),
+                              Padding(
+                                padding: const EdgeInsets.all(32.0),
                                 child: Center(
-                                  child: Text('暫無穿搭建議，請先到衣櫃新增單品'),
+                                  child: Column(
+                                    children: [
+                                      Icon(Icons.checkroom_outlined, size: 48, color: colors.textDim),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        '暫無穿搭建議，請先到衣櫃新增單品',
+                                        style: TextStyle(color: colors.textDim),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      FilledButton.icon(
+                                        onPressed: widget.onAddItems,
+                                        icon: const Icon(Icons.add),
+                                        label: const Text('新增單品'),
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: colors.primary,
+                                          foregroundColor: Colors.black,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               )
                             else
                               GridView.builder(
                                 shrinkWrap: true,
-                                physics:
-                                    const NeverScrollableScrollPhysics(),
-                                gridDelegate:
-                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                physics: const NeverScrollableScrollPhysics(),
+                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: _gridCols(w),
                                   crossAxisSpacing: 16,
                                   mainAxisSpacing: 16,
@@ -301,8 +360,9 @@ class _HomePageState extends State<HomePage> {
                                 itemCount: outfits.length,
                                 itemBuilder: (context, i) {
                                   final o = outfits[i];
-                                  return OutfitRecommendCard(
+                                  return GlassOutfitCard(
                                     outfit: o,
+                                    colors: colors,
                                     onSave: () => _handleSave(o.id),
                                     onShare: () => _handleShare(o.id),
                                   );
@@ -318,218 +378,106 @@ class _HomePageState extends State<HomePage> {
       },
     );
   }
-
-  Widget _buildEmptyState(double w, bool isLarge) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('每日出裝'),
-        actions: const [_SettingsButton()],
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: _containerMaxWidth(w)),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              isLarge ? 24 : 16,
-              16,
-              isLarge ? 24 : 16,
-              isLarge ? 24 : 88,
-            ),
-            child: EmptyState(
-              icon: Icons.inventory_2_outlined,
-              title: '尚未建立衣櫃',
-              description: '新增衣服單品，開始使用 AI 智能穿搭功能',
-              actionLabel: '前往衣櫃',
-              onAction: widget.onAddItems,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-// ---------------------------------------------------------------------------
-// Widgets（保持你原本的 UI）
-// ---------------------------------------------------------------------------
+// ==========================================
+// S-FLOW Components (Local)
+// ==========================================
 
-class _SettingsButton extends StatelessWidget {
-  const _SettingsButton();
+class GlassWeatherBar extends StatelessWidget {
+  final SFlowColors colors;
+  const GlassWeatherBar({super.key, required this.colors});
+
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: '設定',
-      icon: const Icon(Icons.settings_outlined),
-      onPressed: () {},
-    );
-  }
-}
-
-class WeatherBar extends StatelessWidget {
-  const WeatherBar({super.key});
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    return Card(
-      child: Padding(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            const Icon(Icons.wb_sunny_outlined,
-                color: Colors.amber),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('台北 · 晴時多雲', style: t.titleMedium),
-                  const SizedBox(height: 2),
-                  Text(
-                    '20° / 26° · 濕度 65% · 風 3m/s',
-                    style: t.bodySmall
-                        ?.copyWith(color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Icon(Icons.umbrella_outlined),
-            const SizedBox(width: 6),
-            Text('降雨 20%', style: t.bodySmall),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DesktopStats extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-
-    Widget stat(
-            String title, String value, IconData icon, Color color) =>
-        Card(
-          child: Padding(
-            padding:
-                const EdgeInsets.fromLTRB(16, 18, 16, 18),
-            child: Row(
-              mainAxisAlignment:
-                  MainAxisAlignment.spaceBetween,
+    return GlassContainer(
+      colors: colors,
+      child: Row(
+        children: [
+          Icon(Icons.wb_sunny_outlined, color: colors.primary, size: 32),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                Row(
                   children: [
-                    Text(title,
-                        style: t.bodySmall
-                            ?.copyWith(color: Colors.grey[600])),
-                    const SizedBox(height: 6),
-                    Text(value, style: t.headlineSmall),
+                    Icon(Icons.location_on, size: 12, color: colors.secondary),
+                    const SizedBox(width: 4),
+                    Text('台北市', style: TextStyle(color: colors.textDim, fontSize: 12)),
                   ],
                 ),
-                Icon(icon, size: 28, color: color),
+                const SizedBox(height: 4),
+                Text('24°C 晴時多雲', style: TextStyle(color: colors.text, fontSize: 16, fontWeight: FontWeight.bold)),
+                Text('濕度 65% · 降雨機率 20%', style: TextStyle(color: colors.textDim, fontSize: 12)),
               ],
             ),
           ),
-        );
-
-    return Row(
-      children: [
-        Expanded(
-            child: stat('本週穿搭', '12 套', Icons.calendar_today_outlined,
-                Colors.blue)),
-        const SizedBox(width: 12),
-        Expanded(
-            child: stat('衣櫃單品', '42 件', Icons.inventory_2_outlined,
-                Colors.green)),
-        const SizedBox(width: 12),
-        Expanded(
-            child: stat('風格匹配', '92%', Icons.trending_up,
-                Colors.purple)),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class OutfitRecommendCard extends StatelessWidget {
-  const OutfitRecommendCard({
+class GlassOutfitCard extends StatelessWidget {
+  final Outfit outfit;
+  final SFlowColors colors;
+  final VoidCallback onSave;
+  final VoidCallback onShare;
+
+  const GlassOutfitCard({
     super.key,
     required this.outfit,
+    required this.colors,
     required this.onSave,
     required this.onShare,
   });
 
-  final Outfit outfit;
-  final VoidCallback onSave;
-  final VoidCallback onShare;
-
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-
-    return Card(
-      clipBehavior: Clip.antiAlias,
+    return GlassContainer(
+      padding: EdgeInsets.zero,
+      colors: colors,
+      onTap: () {}, // 開啟詳情
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
             child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFFDBEAFE), Color(0xFFEDE9FE)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.2),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              child: const Icon(Icons.checkroom_outlined,
-                  size: 64, color: Colors.black54),
+              child: outfit.imageUrl != null 
+                ? Image.network(
+                    outfit.imageUrl!, 
+                    fit: BoxFit.cover,
+                    errorBuilder: (ctx, err, stack) => Icon(Icons.broken_image, color: colors.textDim),
+                  )
+                : Icon(Icons.checkroom_outlined, size: 48, color: colors.textDim),
             ),
           ),
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(outfit.title, style: t.titleMedium),
+                Text(
+                  outfit.title, 
+                  style: TextStyle(fontWeight: FontWeight.bold, color: colors.text),
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                ),
                 const SizedBox(height: 4),
                 Text(
                   outfit.subtitle,
-                  style: t.bodySmall
-                      ?.copyWith(color: Colors.grey[600]),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final tag in outfit.tags)
-                      Chip(
-                        label: Text(tag),
-                        visualDensity:
-                            VisualDensity.compact,
-                      ),
-                  ],
+                  style: TextStyle(fontSize: 12, color: colors.textDim),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: onSave,
-                      icon: const Icon(Icons.bookmark_border,
-                          size: 18),
-                      label: const Text('收藏'),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: onShare,
-                      icon: const Icon(Icons.ios_share,
-                          size: 18),
-                      label: const Text('分享'),
-                    ),
+                    _GlassActionButton(icon: Icons.bookmark_border, onTap: onSave, colors: colors),
+                    const Spacer(),
+                    _GlassActionButton(icon: Icons.ios_share, onTap: onShare, colors: colors),
                   ],
                 ),
               ],
@@ -541,48 +489,40 @@ class OutfitRecommendCard extends StatelessWidget {
   }
 }
 
-class EmptyState extends StatelessWidget {
-  const EmptyState({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.actionLabel,
-    required this.onAction,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-  final String actionLabel;
-  final VoidCallback onAction;
+class DesktopStatsSection extends StatelessWidget {
+  final SFlowColors colors;
+  const DesktopStatsSection({super.key, required this.colors});
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
+    return Row(
+      children: [
+        _StatCard('本週穿搭', '12 套', Icons.calendar_today, colors),
+        const SizedBox(width: 12),
+        _StatCard('衣櫃單品', '42 件', Icons.checkroom, colors),
+        const SizedBox(width: 12),
+        _StatCard('風格匹配', '92%', Icons.trending_up, colors),
+      ],
+    );
+  }
 
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 24),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-            horizontal: 20, vertical: 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+  Widget _StatCard(String title, String val, IconData icon, SFlowColors colors) {
+    return Expanded(
+      child: GlassContainer(
+        colors: colors,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Icon(icon, size: 56, color: Colors.blueGrey),
-            const SizedBox(height: 12),
-            Text(title,
-                style: t.titleLarge,
-                textAlign: TextAlign.center),
-            const SizedBox(height: 6),
-            Text(
-              description,
-              style: t.bodyMedium
-                  ?.copyWith(color: Colors.grey[600]),
-              textAlign: TextAlign.center,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(color: colors.textDim, fontSize: 12)),
+                const SizedBox(height: 4),
+                Text(val, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: colors.text)),
+              ],
             ),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: onAction, child: Text(actionLabel)),
+            Icon(icon, color: colors.primary.withOpacity(0.8), size: 24),
           ],
         ),
       ),
@@ -590,32 +530,54 @@ class EmptyState extends StatelessWidget {
   }
 }
 
-class _TitleWithSub extends StatelessWidget {
-  const _TitleWithSub({
-    required this.title,
-    required this.subtitle,
-  });
+class GlassButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  final IconData icon;
+  final String label;
+  final SFlowColors colors;
 
-  final String title;
-  final String subtitle;
+  const GlassButton({
+    super.key, required this.onPressed, required this.icon, required this.label, required this.colors,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-        children: [
-          Text(title, style: t.titleLarge),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style:
-                t.bodySmall?.copyWith(color: Colors.grey[600]),
-          ),
-        ],
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: colors.primary.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: colors.primary.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: colors.primary),
+            const SizedBox(width: 6),
+            Text(label, style: TextStyle(color: colors.primary, fontSize: 12, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassActionButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final SFlowColors colors;
+  const _GlassActionButton({required this.icon, required this.onTap, required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.all(4.0),
+        child: Icon(icon, size: 20, color: colors.secondary),
       ),
     );
   }

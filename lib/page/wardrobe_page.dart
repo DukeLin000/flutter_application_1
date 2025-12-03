@@ -1,7 +1,7 @@
 // lib/page/wardrobe_page.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/api/api_client.dart'; // ✅ 引入 API Client
+import 'package:flutter_application_1/api/api_client.dart';
 import 'package:flutter_application_1/widgets/ui/add_item_dialog.dart' as adddlg;
 
 /// ---------------------------------------------------------------------------
@@ -9,10 +9,10 @@ import 'package:flutter_application_1/widgets/ui/add_item_dialog.dart' as adddlg
 /// ---------------------------------------------------------------------------
 class ClothingItem {
   final String id;
-  final String category;    // 'top' | 'bottom' | ... (前端習慣小寫)
-  final String subCategory; // 針織衫、工裝褲...
+  final String category;
+  final String subCategory;
   final String? brand;
-  final String imageUrl;    // http url
+  final String imageUrl;
   final List<String> tags;
 
   ClothingItem({
@@ -24,13 +24,10 @@ class ClothingItem {
     this.tags = const [],
   });
 
-  // ✅ Factory: 解析後端 JSON
   factory ClothingItem.fromJson(Map<String, dynamic> json) {
     return ClothingItem(
       id: json['id'].toString(),
-      // 後端 Enum 通常是大寫 (TOP)，前端 UI 邏輯目前用小寫 (top)
       category: json['category']?.toString().toLowerCase() ?? 'top',
-      // 後端 DTO 有 subCategory 也有 name，優先用 subCategory
       subCategory: json['subCategory'] ?? json['name'] ?? '',
       brand: json['brand'],
       imageUrl: json['imageUrl'] ?? '',
@@ -50,29 +47,45 @@ class WardrobePage extends StatefulWidget {
 }
 
 class _WardrobePageState extends State<WardrobePage> {
-  String viewMode = 'grid'; // grid | list
-  List<ClothingItem> items = []; // ✅ 預設為空，等待 API 載入
+  String viewMode = 'grid';
+  List<ClothingItem> items = [];
   String selectedCategory = 'all';
-  bool _isLoading = false; // ✅ 載入狀態
+  bool _isLoading = false;
+
+  // ✅ 1. 定義顏色翻譯表 (中文 -> 英文 Enum)
+  // 讓 App 知道 "黑色" 對應後端的 "BLACK"
+  final Map<String, String> _colorMap = {
+    '黑色': 'BLACK',
+    '白色': 'WHITE',
+    '灰色': 'GRAY',
+    '米色': 'BEIGE',
+    '藍色': 'BLUE',
+    '深藍': 'NAVY',
+    '紅色': 'RED',
+    '粉色': 'PINK',
+    '黃色': 'YELLOW',
+    '綠色': 'GREEN',
+    '紫色': 'PURPLE',
+    '橘色': 'ORANGE',
+    '棕色': 'BROWN',
+    '卡其': 'KHAKI',
+    '多色': 'MULTICOLOR',
+  };
 
   @override
   void initState() {
     super.initState();
-    _fetchItems(); // ✅ 啟動時載入資料
+    _fetchItems();
   }
 
   // ------------------ API Actions ------------------
 
-  // 1. 從後端讀取列表
   Future<void> _fetchItems() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
     
     try {
-      // 呼叫 API (ApiClient 會自動處理 Token)
-      // 你也可以傳入 category 參數讓後端篩選，這裡先示範前端篩選
       final list = await ApiClient.I.listItems();
-      
       if (!mounted) return;
       setState(() {
         items = list.map((json) => ClothingItem.fromJson(json)).toList();
@@ -84,9 +97,7 @@ class _WardrobePageState extends State<WardrobePage> {
     }
   }
 
-  // 2. 新增衣物 (上傳圖片 + 建立資料)
   Future<void> _addItem() async {
-    // 1) 開啟對話框取得使用者輸入
     final raw = await adddlg.showAddItemDialog(context);
     if (raw == null) return;
 
@@ -95,23 +106,32 @@ class _WardrobePageState extends State<WardrobePage> {
     try {
       String finalImageUrl = raw.imageUrl;
 
-      // 2) 如果有選圖片檔案，先上傳
       if (raw.imageBytes != null) {
         final filename = 'upload_${DateTime.now().millisecondsSinceEpoch}.jpg';
         final uploadRes = await ApiClient.I.uploadImageBytes(
           raw.imageBytes!,
           filename: filename,
         );
-        // 後端回傳 { "url": "http://...", ... }
         finalImageUrl = uploadRes['url'];
       }
 
-      // 3) 組裝資料呼叫後端建立 API
+      // ✅ 2. 關鍵修正：翻譯顏色
+      String? backendColor;
+      if (raw.color.isNotEmpty) {
+        final uiColor = raw.color.first; // 取得選單的中文 "黑色"
+        backendColor = _colorMap[uiColor]; // 查表轉成 "BLACK"
+        
+        // 如果查不到 (例如後端沒定義這個顏色)，印出警告以免程式崩潰
+        if (backendColor == null) {
+          debugPrint('警告：找不到顏色 "$uiColor" 的對應英文代碼，將傳送 null');
+        }
+      }
+
       final body = {
-        'category': raw.category.name.toUpperCase(), // 後端 Enum 需要大寫
+        'category': raw.category.name.toUpperCase(),
         'subCategory': raw.subCategory,
         'brand': raw.brand,
-        'color': raw.color.isNotEmpty ? raw.color.first : null,
+        'color': backendColor, // ✅ 這裡傳送的是翻譯後的 "BLACK"
         'season': raw.season.map((e) => e.name.toUpperCase()).toList(),
         'occasion': raw.occasion.map((e) => e.name.toUpperCase()).toList(),
         'fit': raw.fit.name.toUpperCase(),
@@ -127,7 +147,7 @@ class _WardrobePageState extends State<WardrobePage> {
       
       if (mounted) {
         _snack('新增成功');
-        _fetchItems(); // ✅ 成功後重新整理列表
+        _fetchItems(); // ✅ 成功後重新整理列表 (這行現在會被執行了)
       }
     } catch (e) {
       if (mounted) _snack('新增失敗: $e', isError: true);
@@ -167,7 +187,6 @@ class _WardrobePageState extends State<WardrobePage> {
     return 0.74;
   }
 
-  // ------------------ Derived ------------------
   List<Map<String, dynamic>> get _categories {
     int countCat(String id) => items.where((i) => i.category == id).length;
     return [
@@ -183,7 +202,6 @@ class _WardrobePageState extends State<WardrobePage> {
   List<ClothingItem> get _filteredItems =>
       selectedCategory == 'all' ? items : items.where((i) => i.category == selectedCategory).toList();
 
-  // ------------------ Actions ------------------
   void _openFilter() async {
     await showModalBottomSheet(
       context: context,
@@ -201,7 +219,6 @@ class _WardrobePageState extends State<WardrobePage> {
       appBar: AppBar(
         title: const Text('衣櫃管理'),
         actions: [
-          // 手動重新整理按鈕
           IconButton(onPressed: _fetchItems, icon: const Icon(Icons.refresh)), 
           IconButton(onPressed: () {}, icon: const Icon(Icons.search)),
         ],
@@ -212,7 +229,6 @@ class _WardrobePageState extends State<WardrobePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 工具列 (Header)
               Padding(
                 padding: EdgeInsets.fromLTRB(
                   w >= 1200 ? 24 : 16, 16, w >= 1200 ? 24 : 16, 0),
@@ -242,8 +258,6 @@ class _WardrobePageState extends State<WardrobePage> {
                 ),
               ),
               const SizedBox(height: 12),
-
-              // 分類標籤 (Category Filter)
               SizedBox(
                 height: 42,
                 child: ListView.separated(
@@ -269,8 +283,6 @@ class _WardrobePageState extends State<WardrobePage> {
                 ),
               ),
               const SizedBox(height: 12),
-
-              // 內容區 (Content)
               Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
@@ -321,11 +333,9 @@ class _WardrobePageState extends State<WardrobePage> {
   }
 }
 
-/// ------------------ Cards ------------------
 class _GridCard extends StatelessWidget {
   const _GridCard({required this.item});
   final ClothingItem item;
-
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
@@ -370,7 +380,6 @@ class _GridCard extends StatelessWidget {
 class _ListCard extends StatelessWidget {
   const _ListCard({required this.item});
   final ClothingItem item;
-
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
@@ -417,11 +426,9 @@ class _ListCard extends StatelessWidget {
   }
 }
 
-/// 網路圖 / base64 dataURL 都支援；錯誤情況顯示 Placeholder
 class _ImageBox extends StatelessWidget {
   const _ImageBox({required this.url});
   final String url;
-
   @override
   Widget build(BuildContext context) {
     final placeholder = Container(
@@ -434,9 +441,7 @@ class _ImageBox extends StatelessWidget {
       ),
       child: const Center(child: Icon(Icons.image_outlined, color: Colors.black54)),
     );
-
     if (url.isEmpty) return placeholder;
-
     if (url.startsWith('data:image')) {
       try {
         final comma = url.indexOf(',');
@@ -447,7 +452,6 @@ class _ImageBox extends StatelessWidget {
         return placeholder;
       }
     }
-
     return Image.network(
       url,
       fit: BoxFit.cover,
@@ -457,10 +461,8 @@ class _ImageBox extends StatelessWidget {
   }
 }
 
-/// ------------------ Filter Sheet (示意) ------------------
 class _FilterSheet extends StatelessWidget {
   const _FilterSheet();
-
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
@@ -476,7 +478,6 @@ class _FilterSheet extends StatelessWidget {
             ),
           ],
         );
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       child: Column(

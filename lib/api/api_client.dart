@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:typed_data'; // 必須保留，為了 Uint8List
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -8,7 +8,7 @@ class ApiClient {
   ApiClient._internal({String? baseUrl}) : _baseUrl = baseUrl ?? _defaultBaseUrl;
   static final ApiClient I = ApiClient._internal();
 
-  // ---- Base URL 設定 (修正版) ----
+  // ---- Base URL 設定 ----
   static String get _defaultBaseUrl {
     // 1. 如果編譯時有指定 --dart-define=API_BASE_URL=... 則優先使用
     const fromEnv = String.fromEnvironment('API_BASE_URL');
@@ -62,18 +62,39 @@ class ApiClient {
     return h;
   }
 
+  // ✅ 修正：強制清理多餘斜線，避免產生 "//"
   Uri _uri(String path, [Map<String, dynamic>? query]) {
-    final base = _baseUrl.endsWith('/') ? _baseUrl.substring(0, _baseUrl.length - 1) : _baseUrl;
-    final p = path.startsWith('/') ? path : '/$path';
-    return Uri.parse('$base$p').replace(
+    // 1. 移除 base URL 尾端所有斜線
+    String cleanBase = _baseUrl;
+    while (cleanBase.endsWith('/')) {
+      cleanBase = cleanBase.substring(0, cleanBase.length - 1);
+    }
+
+    // 2. 移除 path 開頭所有斜線 (包含可能多打的)
+    String cleanPath = path;
+    while (cleanPath.startsWith('/')) {
+      cleanPath = cleanPath.substring(1);
+    }
+
+    // 3. 乾淨組合成 http://host/path
+    return Uri.parse('$cleanBase/$cleanPath').replace(
       queryParameters: query?.map((k, v) => MapEntry(k, '$v')),
     );
   }
 
+  // ✅ 修正：Compose URI 也要套用相同的防呆邏輯
   Uri _composeUri(String baseUrl, String path, [Map<String, dynamic>? query]) {
-    final b = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
-    final p = path.startsWith('/') ? path : '/$path';
-    return Uri.parse('$b$p').replace(
+    String cleanBase = baseUrl;
+    while (cleanBase.endsWith('/')) {
+      cleanBase = cleanBase.substring(0, cleanBase.length - 1);
+    }
+
+    String cleanPath = path;
+    while (cleanPath.startsWith('/')) {
+      cleanPath = cleanPath.substring(1);
+    }
+
+    return Uri.parse('$cleanBase/$cleanPath').replace(
       queryParameters: query?.map((k, v) => MapEntry(k, '$v')),
     );
   }

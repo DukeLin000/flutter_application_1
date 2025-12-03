@@ -138,7 +138,7 @@ class _CapsulePageState extends State<CapsulePage> with TickerProviderStateMixin
       case 'must': return Colors.red.withOpacity(.10);
       case 'recommended': return Colors.amber.withOpacity(.16);
       case 'optional': return Colors.green.withOpacity(.12);
-      default: return c.surfaceVariant;
+      default: return c.surfaceContainerHighest;
     }
   }
 
@@ -340,7 +340,7 @@ class _ItemCard extends StatelessWidget {
       case 'must': return Colors.red.withOpacity(.10);
       case 'recommended': return Colors.amber.withOpacity(.16);
       case 'optional': return Colors.green.withOpacity(.12);
-      default: return Theme.of(ctx).colorScheme.surfaceVariant;
+      default: return Theme.of(ctx).colorScheme.surfaceContainerHighest;
     }
   }
 
@@ -403,7 +403,9 @@ class _ItemCard extends StatelessWidget {
               const SizedBox(height: 8),
               LayoutBuilder(builder: (ctx, c) {
                 int cols;
-                if (c.maxWidth >= 900) cols = 3; else if (c.maxWidth >= 600) cols = 3; else cols = 2;
+                if (c.maxWidth >= 900) {
+                  cols = 3;
+                } else if (c.maxWidth >= 600) cols = 3; else cols = 2;
                 return GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),

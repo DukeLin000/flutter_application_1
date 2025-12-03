@@ -1,11 +1,95 @@
-// lib/page/onboarding_page.dart
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../models/user_profile.dart';
 
-/// 顏色偏好層級（內部狀態使用；儲存時只把 never 丟進 colorBlacklist）
+// ==========================================
+// 0. S-FLOW Theme & Common Widgets
+// ==========================================
+
+class ThemeColors {
+  final Color primary;
+  final Color secondary;
+  final Color glow;
+  final Color text;
+  final Color glassBorder;
+  final Color glassBg;
+  final List<Color> bgGradient;
+  final List<Color> accentGradient;
+
+  const ThemeColors({
+    required this.primary,
+    required this.secondary,
+    required this.glow,
+    required this.text,
+    required this.glassBorder,
+    required this.glassBg,
+    required this.bgGradient,
+    required this.accentGradient,
+  });
+}
+
+final _goldTheme = ThemeColors(
+  primary: const Color(0xFFFBBF24),
+  secondary: const Color(0xFFFDE68A),
+  glow: const Color.fromRGBO(251, 191, 36, 0.4),
+  text: const Color(0xFFFEF3C7),
+  glassBorder: const Color(0xFFFBBF24).withOpacity(0.3),
+  glassBg: const Color(0xFFFBBF24).withOpacity(0.05),
+  bgGradient: [const Color(0xFF0F172A), const Color(0xFF1C1917), Colors.black],
+  accentGradient: [const Color(0xFFF59E0B), const Color(0xFFFDE047)],
+);
+
+final _purpleTheme = ThemeColors(
+  primary: const Color(0xFFA78BFA),
+  secondary: const Color(0xFFF0ABFC),
+  glow: const Color.fromRGBO(167, 139, 250, 0.4),
+  text: const Color(0xFFEDE9FE),
+  glassBorder: const Color(0xFFA78BFA).withOpacity(0.3),
+  glassBg: const Color(0xFFA78BFA).withOpacity(0.05),
+  bgGradient: [const Color(0xFF0F172A), const Color(0xFF020617), Colors.black],
+  accentGradient: [const Color(0xFF7C3AED), const Color(0xFF818CF8)],
+);
+
+class GlassContainer extends StatelessWidget {
+  final Widget child;
+  final ThemeColors colors;
+  final EdgeInsetsGeometry padding;
+  const GlassContainer({
+    super.key,
+    required this.child,
+    required this.colors,
+    this.padding = const EdgeInsets.all(24),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.4),
+            border: Border.all(color: colors.glassBorder),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(color: colors.glow.withOpacity(0.1), blurRadius: 20, spreadRadius: -5),
+            ],
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+// ==========================================
+// 1. Onboarding Page Logic
+// ==========================================
+
 enum ColorPreferenceLevel { like, neutral, avoid, never }
 
-/// 風格選項
 class StyleOption {
   final String id;
   final String label;
@@ -22,21 +106,20 @@ class OnboardingPage extends StatefulWidget {
 }
 
 class _OnboardingPageState extends State<OnboardingPage> {
-  // -------------------- Step 控制 --------------------
+  bool _isPurple = true; // Theme state
   int _step = 1;
 
-  // -------------------- 基本資料 --------------------
+  // Basic Data
   String _gender = 'male';
   int _height = 175;
   int _weight = 70;
   int _shoulder = 45;
   int _waist = 80;
+  String _fitPreference = 'regular';
+  String _commuteMethod = 'public';
+  bool _hasMotorcycle = false;
 
-  String _fitPreference = 'regular';        // slim | regular | loose
-  String _commuteMethod = 'public';         // walk | bike | motorcycle | car | public
-  bool _hasMotorcycle = false;              // 保留欄位對齊你的模型
-
-  // -------------------- 風格 --------------------
+  // Styles
   final List<StyleOption> _defaultStyles = const [
     StyleOption(id: 'street', label: '街頭'),
     StyleOption(id: 'outdoor', label: '戶外'),
@@ -48,37 +131,35 @@ class _OnboardingPageState extends State<OnboardingPage> {
   final List<String> _defaultSelected = const ['street', 'outdoor', 'office'];
   final List<StyleOption> _customStyles = [];
   late List<String> _selectedStyleIds = [..._defaultSelected];
-
-  // styleWeights（0~100，總和=100）
   Map<String, int> _styleWeights = {};
 
-  // Dialog 用暫存
-  bool _isStyleDialogOpen = false;
+  // Dialog temp
   final TextEditingController _newStyleCtrl = TextEditingController();
   late List<String> _tempSelectedStyleIds = [..._selectedStyleIds];
 
-  // -------------------- 顏色偏好 --------------------
-  bool _showNever = false; // 「絕不建議」開關
+  // Colors
+  bool _showNever = false;
   final Map<String, ColorPreferenceLevel> _colorPrefs = {};
 
-  // 色票（id / label / color）
   final List<(String id, String label, Color color)> _basicColors = const [
     ('black', '黑色', Colors.black),
     ('white', '白色', Colors.white),
   ];
   final List<(String id, String label, Color color)> _moreColors = const [
-    ('pink',   '粉紅',  Color(0xFFF472B6)),
-    ('purple', '紫色',  Color(0xFFA78BFA)),
-    ('yellow', '黃色',  Color(0xFFFACC15)),
-    ('orange', '橘色',  Color(0xFFF59E0B)),
-    ('green',  '綠色',  Color(0xFF34D399)),
-    ('red',    '紅色',  Color(0xFFEF4444)),
-    ('gray',   '灰色',  Color(0xFF9CA3AF)),
-    ('brown',  '棕色',  Color(0xFF92400E)),
-    ('navy',   '深藍',  Color(0xFF1E3A8A)),
-    ('beige',  '米色',  Color(0xFFF5F5DC)),
+    ('pink', '粉紅', Color(0xFFF472B6)),
+    ('purple', '紫色', Color(0xFFA78BFA)),
+    ('yellow', '黃色', Color(0xFFFACC15)),
+    ('orange', '橘色', Color(0xFFF59E0B)),
+    ('green', '綠色', Color(0xFF34D399)),
+    ('red', '紅色', Color(0xFFEF4444)),
+    ('gray', '灰色', Color(0xFF9CA3AF)),
+    ('brown', '棕色', Color(0xFF92400E)),
+    ('navy', '深藍', Color(0xFF1E3A8A)),
+    ('beige', '米色', Color(0xFFF5F5DC)),
   ];
   bool _expandMoreColors = false;
+
+  ThemeColors get _currentTheme => _isPurple ? _purpleTheme : _goldTheme;
 
   @override
   void initState() {
@@ -86,16 +167,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
     _styleWeights = _equalizeWeights(_selectedStyleIds);
   }
 
-  // 依容器寬度給最大內容寬
-  double _maxW(double w) {
-    if (w >= 1600) return 1100;
-    if (w >= 1200) return 1000;
-    if (w >= 900) return 860;
-    if (w >= 600) return 560;
-    return w - 24;
-  }
-
-  // 權重平均（總和 100）
   Map<String, int> _equalizeWeights(List<String> ids) {
     final map = <String, int>{};
     if (ids.isEmpty) return map;
@@ -109,51 +180,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   List<StyleOption> get _allStyles => [..._defaultStyles, ..._customStyles];
 
-  void _toggleTempStyle(String id) {
-    setState(() {
-      if (_tempSelectedStyleIds.contains(id)) {
-        _tempSelectedStyleIds.remove(id);
-      } else {
-        _tempSelectedStyleIds.add(id);
-      }
-    });
-  }
-
-  void _confirmStyleSelection() {
-    setState(() {
-      _selectedStyleIds = _tempSelectedStyleIds.isEmpty ? [..._defaultSelected] : [..._tempSelectedStyleIds];
-      _styleWeights = _equalizeWeights(_selectedStyleIds);
-      _isStyleDialogOpen = false;
-    });
-  }
-
-  void _addCustomStyle() {
-    final name = _newStyleCtrl.text.trim();
-    if (name.isEmpty) return;
-    // 簡單驗證：不可重複
-    final exists = _allStyles.any((s) => s.label == name);
-    if (exists) return;
-
-    final id = 'custom_${name.hashCode.abs()}';
-    setState(() {
-      _customStyles.add(StyleOption(id: id, label: name, isCustom: true));
-      _tempSelectedStyleIds.add(id);
-      _newStyleCtrl.clear();
-    });
-  }
-
-  // 偏好 setter / getter
-  void _setColorPref(String id, ColorPreferenceLevel level) {
-    setState(() => _colorPrefs[id] = level);
-  }
-
-  ColorPreferenceLevel _getColorPref(String id) {
-    return _colorPrefs[id] ?? ColorPreferenceLevel.neutral;
-  }
-
-  // 完成 → 輸出 UserProfile
   void _finish() {
-    // 把 never 顏色轉成 colorBlacklist（其餘等級不落地到模型，之後你要擴充可再加欄位）
     final blacklist = _colorPrefs.entries
         .where((e) => e.value == ColorPreferenceLevel.never)
         .map((e) => e.key)
@@ -171,739 +198,666 @@ class _OnboardingPageState extends State<OnboardingPage> {
       styleWeights: _styleWeights,
       gender: _gender,
     );
-
     widget.onComplete(profile);
   }
 
-  // -------------------- UI --------------------
+  // ==========================================
+  // UI Construction
+  // ==========================================
+
   @override
   Widget build(BuildContext context) {
+    final colors = _currentTheme;
     final w = MediaQuery.of(context).size.width;
+    final isWide = w >= 600;
 
     return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: _maxW(w)),
-          child: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              child: Column(
-                children: [
-                  _buildStepper(context),
-                  const SizedBox(height: 12),
-                  Card(
-                    elevation: 2,
-                    clipBehavior: Clip.antiAlias,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          if (_step == 1) _stepBasic(context),
-                          if (_step == 2) _stepStyleAndColors(context),
-                          if (_step == 3) _stepReview(context),
-                          const Divider(height: 28),
-                          _buildFooterButtons(),
-                        ],
-                      ),
+      backgroundColor: Colors.transparent,
+      body: AnimatedContainer(
+        duration: const Duration(milliseconds: 1000),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: colors.bgGradient,
+          ),
+        ),
+        child: Stack(
+          children: [
+            _buildBackgroundGlow(colors),
+            SafeArea(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: isWide ? 800 : w - 32),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Column(
+                      children: [
+                        // Header with Theme Toggle
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildStepper(colors),
+                            IconButton(
+                              onPressed: () => setState(() => _isPurple = !_isPurple),
+                              icon: Icon(
+                                _isPurple ? Icons.wb_sunny_outlined : Icons.nightlight_round,
+                                color: colors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        
+                        // Main Glass Card
+                        GlassContainer(
+                          colors: colors,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 500),
+                            child: Column(
+                              key: ValueKey(_step),
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (_step == 1) _stepBasic(colors),
+                                if (_step == 2) _stepStyleAndColors(colors),
+                                if (_step == 3) _stepReview(colors),
+                                const SizedBox(height: 32),
+                                const Divider(color: Colors.white12),
+                                const SizedBox(height: 16),
+                                _buildFooterButtons(colors),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
 
-  // 進度顯示
-  Widget _buildStepper(BuildContext context) {
+  Widget _buildBackgroundGlow(ThemeColors colors) {
+    return Stack(
+      children: [
+        Positioned(
+          top: -100,
+          right: -100,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 1000),
+            width: 400,
+            height: 400,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: colors.secondary.withOpacity(0.15),
+            ),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+        ),
+        Positioned(
+          bottom: -50,
+          left: -50,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 1000),
+            width: 300,
+            height: 300,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: colors.primary.withOpacity(0.15),
+            ),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStepper(ThemeColors colors) {
     Widget dot(int s) {
       final isDone = s < _step;
       final isNow = s == _step;
-      final bg = isDone
-          ? Colors.green
-          : isNow
-              ? Theme.of(context).colorScheme.primary
-              : Colors.white;
-      final fg = (isDone || isNow) ? Colors.white : Colors.grey;
-
-      return Container(
-        width: 44,
-        height: 44,
+      return AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        width: isNow ? 32 : 12,
+        height: 12,
         decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.grey.shade300),
-          boxShadow: isNow
-              ? [BoxShadow(color: bg.withOpacity(.25), blurRadius: 10)]
-              : null,
-        ),
-        child: Center(
-          child: isDone
-              ? const Icon(Icons.check_circle, size: 22, color: Colors.white)
-              : Text('$s', style: TextStyle(fontSize: 18, color: fg)),
+          color: isDone || isNow ? colors.primary : Colors.white12,
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: isNow ? [BoxShadow(color: colors.glow, blurRadius: 8)] : null,
         ),
       );
     }
 
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        dot(1), const SizedBox(width: 12),
-        dot(2), const SizedBox(width: 12),
+        dot(1), const SizedBox(width: 8),
+        dot(2), const SizedBox(width: 8),
         dot(3),
       ],
     );
   }
 
-  // -------------------- Step 1：基本資料 --------------------
-  Widget _stepBasic(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-
+  // -------------------- Step 1: Basic Info --------------------
+  Widget _stepBasic(ThemeColors colors) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text('WELCOME TO S-FLOW', style: TextStyle(color: colors.primary, fontWeight: FontWeight.bold, letterSpacing: 2)),
         const SizedBox(height: 8),
-        Center(
-          child: Column(
+        const Text('建立您的個人檔案', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        const Text('讓我們了解您的身形數據，AI 將為您提供最精準的穿搭建議。', style: TextStyle(color: Colors.white54)),
+        
+        const SizedBox(height: 32),
+        _sectionHeader('GENDER', colors),
+        Wrap(
+          spacing: 12,
+          children: [
+            _selectableBtn('男性', _gender == 'male', () => setState(() => _gender = 'male'), colors),
+            _selectableBtn('女性', _gender == 'female', () => setState(() => _gender = 'female'), colors),
+            _selectableBtn('其他', _gender == 'other', () => setState(() => _gender = 'other'), colors),
+          ],
+        ),
+
+        const SizedBox(height: 24),
+        _sectionHeader('MEASUREMENTS', colors),
+        LayoutBuilder(builder: (_, c) {
+          final wide = c.maxWidth > 500;
+          return GridView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: wide ? 2 : 1,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: wide ? 4 : 5,
+            ),
             children: [
-              // ← 統一為黑漸層 Logo 方塊（與 Login 相同樣式）
-              const BlackLogoBox(), // 預設 80x80，可改 size 參數
-              const SizedBox(height: 10),
-              Text('歡迎來到神穿 StylistOS', style: tt.titleLarge),
-              const SizedBox(height: 6),
-              Text(
-                '讓我們了解你的身材和偏好，為你打造專屬穿搭建議',
-                style: tt.bodySmall?.copyWith(color: Colors.grey[600]),
-              ),
+              _glassInput('身高 (cm)', _height, (v) => setState(() => _height = v), colors),
+              _glassInput('體重 (kg)', _weight, (v) => setState(() => _weight = v), colors),
+              _glassInput('肩寬 (cm)', _shoulder, (v) => setState(() => _shoulder = v), colors),
+              _glassInput('腰圍 (cm)', _waist, (v) => setState(() => _waist = v), colors),
             ],
-          ),
-        ),
-        const SizedBox(height: 20),
+          );
+        }),
 
-        // 性別
-        Text('性別', style: tt.titleMedium),
-        const SizedBox(height: 8),
+        const SizedBox(height: 24),
+        _sectionHeader('PREFERENCE', colors),
         Wrap(
-          spacing: 18,
+          spacing: 12, runSpacing: 12,
           children: [
-            _radio('男性', 'male', group: _gender, onChanged: (v) => setState(() => _gender = v)),
-            _radio('女性', 'female', group: _gender, onChanged: (v) => setState(() => _gender = v)),
-            _radio('其他 / 不透露', 'other', group: _gender, onChanged: (v) => setState(() => _gender = v)),
+            _selectableBtn('修身 Slim', _fitPreference == 'slim', () => setState(() => _fitPreference = 'slim'), colors),
+            _selectableBtn('標準 Regular', _fitPreference == 'regular', () => setState(() => _fitPreference = 'regular'), colors),
+            _selectableBtn('寬鬆 Loose', _fitPreference == 'loose', () => setState(() => _fitPreference = 'loose'), colors),
           ],
         ),
-        const SizedBox(height: 16),
 
-        // 身形
-        LayoutBuilder(
-          builder: (_, c) {
-            final twoCols = c.maxWidth >= 520;
-            return GridView(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: twoCols ? 2 : 1,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: twoCols ? 5 : 6,
-              ),
-              children: [
-                _numberField('身高 (cm)', _height, (v) => setState(() => _height = v)),
-                _numberField('體重 (kg)', _weight, (v) => setState(() => _weight = v)),
-                _numberField('肩寬 (cm)', _shoulder, (v) => setState(() => _shoulder = v)),
-                _numberField('腰圍 (cm)', _waist, (v) => setState(() => _waist = v)),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 12),
-
-        // 版型
-        Text('版型偏好', style: tt.titleMedium),
-        const SizedBox(height: 8),
+        const SizedBox(height: 24),
+        _sectionHeader('COMMUTE', colors),
         Wrap(
-          spacing: 18,
+          spacing: 12, runSpacing: 12,
           children: [
-            _radio('修身 Slim Fit', 'slim', group: _fitPreference, onChanged: (v) => setState(() => _fitPreference = v)),
-            _radio('標準 Regular Fit', 'regular', group: _fitPreference, onChanged: (v) => setState(() => _fitPreference = v)),
-            _radio('寬鬆 Loose Fit', 'loose', group: _fitPreference, onChanged: (v) => setState(() => _fitPreference = v)),
-          ],
-        ),
-        const SizedBox(height: 16),
-
-        // 通勤
-        Text('通勤方式', style: tt.titleMedium),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 18,
-          children: [
-            _radio('步行', 'walk', group: _commuteMethod, onChanged: (v) => setState(() => _commuteMethod = v)),
-            _radio('腳踏車', 'bike', group: _commuteMethod, onChanged: (v) => setState(() => _commuteMethod = v)),
-            _radio('機車', 'motorcycle', group: _commuteMethod, onChanged: (v) { setState(() { _commuteMethod = v; _hasMotorcycle = true; }); }),
-            _radio('汽車', 'car', group: _commuteMethod, onChanged: (v) => setState(() => _commuteMethod = v)),
-            _radio('大眾運輸', 'public', group: _commuteMethod, onChanged: (v) => setState(() => _commuteMethod = v)),
+            _selectableBtn('大眾運輸', _commuteMethod == 'public', () => setState(() => _commuteMethod = 'public'), colors),
+            _selectableBtn('機車', _commuteMethod == 'motorcycle', () { setState(() { _commuteMethod = 'motorcycle'; _hasMotorcycle = true; }); }, colors),
+            _selectableBtn('汽車', _commuteMethod == 'car', () => setState(() => _commuteMethod = 'car'), colors),
+            _selectableBtn('步行', _commuteMethod == 'walk', () => setState(() => _commuteMethod = 'walk'), colors),
           ],
         ),
       ],
     );
   }
 
-  // -------------------- Step 2：風格 + 顏色 --------------------
-  Widget _stepStyleAndColors(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-
+  // -------------------- Step 2: Style & Colors --------------------
+  Widget _stepStyleAndColors(ThemeColors colors) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 風格
+        Text('STYLE & COLORS', style: TextStyle(color: colors.primary, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        const SizedBox(height: 8),
+        const Text('風格偏好設定', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+        
+        const SizedBox(height: 32),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('選擇你喜歡的風格', style: tt.titleMedium),
-            OutlinedButton.icon(
-              onPressed: () {
-                setState(() {
-                  _tempSelectedStyleIds = [..._selectedStyleIds];
-                  _isStyleDialogOpen = true;
-                });
-                showDialog(
-                  context: context,
-                  builder: (_) => _styleDialog(context),
-                ).then((_) => setState(() => _isStyleDialogOpen = false));
-              },
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('更多風格選項'),
+            _sectionHeader('FAVORITE STYLES', colors),
+            TextButton.icon(
+              onPressed: () => _openStyleDialog(context, colors),
+              icon: Icon(Icons.add, color: colors.secondary, size: 16),
+              label: Text('更多', style: TextStyle(color: colors.secondary)),
             ),
           ],
         ),
-        const SizedBox(height: 8),
-
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            border: Border.all(color: Colors.grey.shade300, style: BorderStyle.solid, width: 1.2),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: _selectedStyleIds.isEmpty
-              ? Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.auto_awesome, color: Colors.grey, size: 28),
-                    const SizedBox(height: 6),
-                    Text('點擊「更多風格選項」開始選擇', style: tt.bodySmall?.copyWith(color: Colors.grey)),
-                  ],
-                )
-              : Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _selectedStyleIds.map((id) {
-                    final style = _allStyles.firstWhere((s) => s.id == id);
-                    return GestureDetector(
-                      onTap: () {
-                        if (_selectedStyleIds.length <= 1) return;
-                        setState(() {
-                          _selectedStyleIds.remove(id);
-                          _styleWeights = _equalizeWeights(_selectedStyleIds);
-                        });
-                      },
-                      child: Chip(
-                        label: Text(style.label, style: const TextStyle(color: Colors.white)),
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                        deleteIcon: const Icon(Icons.close, color: Colors.white70, size: 18),
-                        onDeleted: null,
-                      ),
-                    );
-                  }).toList(),
-                ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _selectedStyleIds.map((id) {
+            final style = _allStyles.firstWhere((s) => s.id == id, orElse: () => StyleOption(id: id, label: id));
+            return Chip(
+              backgroundColor: colors.primary.withOpacity(0.2),
+              side: BorderSide(color: colors.primary.withOpacity(0.5)),
+              label: Text(style.label, style: const TextStyle(color: Colors.white)),
+              deleteIcon: const Icon(Icons.close, size: 14, color: Colors.white70),
+              onDeleted: () {
+                if (_selectedStyleIds.length > 1) {
+                  setState(() {
+                    _selectedStyleIds.remove(id);
+                    _styleWeights = _equalizeWeights(_selectedStyleIds);
+                  });
+                }
+              },
+            );
+          }).toList(),
         ),
-        const SizedBox(height: 16),
 
-        // 顏色偏好（提示 + 基本色）
+        const SizedBox(height: 32),
+        _sectionHeader('COLOR PREFERENCES', colors),
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [Color(0xFFEFF6FF), Color(0xFFF5F3FF)]),
-            borderRadius: BorderRadius.circular(12),
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white10),
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('顏色偏好設定', style: tt.titleMedium),
-              const SizedBox(height: 6),
+              // Legend
               Wrap(
-                spacing: 12,
-                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 16,
                 children: [
-                  _legendDot(color: Colors.pink, label: '喜歡：優先推薦'),
-                  _legendDot(color: Colors.grey, label: '普通：正常推薦'),
-                  _legendDot(color: Colors.orange, label: '少穿：降低推薦'),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Switch(value: _showNever, onChanged: (v) => setState(() => _showNever = v)),
-                      const SizedBox(width: 6),
-                      const Text('顯示「絕不建議」'),
-                    ],
-                  ),
+                  _legendItem(Icons.favorite, Colors.pink, '喜歡'),
+                  _legendItem(Icons.remove, Colors.grey, '普通'),
+                  _legendItem(Icons.block, Colors.orange, '少穿'),
+                  if (_showNever) _legendItem(Icons.shield, Colors.red, '絕不'),
                 ],
               ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        // 基本色（固定高度避免溢位）
-        LayoutBuilder(
-          builder: (_, c) {
-            final twoCols = c.maxWidth >= 520;
-            final extent = twoCols ? 164.0 : 156.0;
-            return GridView(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: twoCols ? 2 : 1,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                mainAxisExtent: extent, // 固定主軸高度
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                activeColor: colors.primary,
+                title: const Text('顯示「絕不建議」選項', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                value: _showNever,
+                onChanged: (v) => setState(() => _showNever = v),
               ),
-              children: _basicColors.map((e) => _colorTile(e)).toList(),
-            );
-          },
-        ),
-        const SizedBox(height: 8),
-
-        // 更多顏色（可展開）— 同樣用固定高度避免溢位
-        ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          childrenPadding: EdgeInsets.zero,
-          initiallyExpanded: _expandMoreColors,
-          onExpansionChanged: (v) => setState(() => _expandMoreColors = v),
-          title: Row(
-            children: const [
-              Icon(Icons.palette_outlined, size: 18),
-              SizedBox(width: 6),
-              Text('更多顏色偏好設定'),
+              const Divider(color: Colors.white10),
+              const SizedBox(height: 8),
+              
+              // Color Grid
+              GridView.count(
+                crossAxisCount: MediaQuery.of(context).size.width > 600 ? 4 : 2,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 2.2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  ..._basicColors.map((e) => _colorSelector(e, colors)),
+                  if (_expandMoreColors) ..._moreColors.map((e) => _colorSelector(e, colors)),
+                ],
+              ),
+              if (!_expandMoreColors)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: TextButton(
+                    onPressed: () => setState(() => _expandMoreColors = true),
+                    child: Text('顯示更多顏色', style: TextStyle(color: colors.secondary)),
+                  ),
+                ),
             ],
           ),
-          children: [
-            const SizedBox(height: 8),
-            LayoutBuilder(
-              builder: (_, c) {
-                final cols = c.maxWidth >= 900 ? 3 : (c.maxWidth >= 600 ? 2 : 1);
-                final extent = cols >= 2 ? 164.0 : 156.0;
-                return GridView(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: cols,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    mainAxisExtent: extent,
-                  ),
-                  children: _moreColors.map((e) => _colorTile(e)).toList(),
-                );
-              },
-            ),
-          ],
         ),
       ],
     );
   }
 
-  // 顏色卡片
-  Widget _colorTile((String id, String label, Color color) e) {
-    final pref = _getColorPref(e.$1);
-
-    Widget prefBtn(
-      ColorPreferenceLevel level,
-      IconData icon,
-      Color active, {
-      String? tooltip,
-    }) {
-      final selected = pref == level;
-      return Expanded(
-        child: Tooltip(
-          message: tooltip ?? level.name,
-          child: InkWell(
-            onTap: () => _setColorPref(e.$1, level),
-            borderRadius: BorderRadius.circular(6),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(vertical: 6), // 較小避免撐高
-              decoration: BoxDecoration(
-                color: selected ? active : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Icon(
-                icon,
-                size: 16,
-                color: selected ? Colors.white : Colors.grey,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: Colors.grey.shade200, width: 1.5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: e.$3,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: e.$3.computeLuminance() > .8
-                    ? Colors.grey.shade300
-                    : Colors.transparent,
-                width: 2,
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(e.$2, style: const TextStyle(fontSize: 12)),
-          const SizedBox(height: 8),
-          // 固定底部控制列高度，避免被內容撐高
-          SizedBox(
-            height: 36,
-            child: Row(
-              children: [
-                prefBtn(ColorPreferenceLevel.like, Icons.favorite, Colors.pink, tooltip: '喜歡'),
-                const SizedBox(width: 6),
-                prefBtn(ColorPreferenceLevel.neutral, Icons.remove, Colors.grey, tooltip: '普通'),
-                const SizedBox(width: 6),
-                prefBtn(ColorPreferenceLevel.avoid, Icons.block, Colors.orange, tooltip: '少穿'),
-                if (_showNever) ...[
-                  const SizedBox(width: 6),
-                  prefBtn(ColorPreferenceLevel.never, Icons.shield, Colors.red, tooltip: '絕不建議'),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // -------------------- Step 3：確認 --------------------
-  Widget _stepReview(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
+  // -------------------- Step 3: Review --------------------
+  Widget _stepReview(ThemeColors colors) {
     final styles = _selectedStyleIds
-        .map((id) => (_allStyles.firstWhere((s) => s.id == id).label, _styleWeights[id] ?? 0))
-        .toList()
-      ..sort((a, b) => b.$2.compareTo(a.$2));
-
-    List<(String id, String label)> _byLevel(ColorPreferenceLevel level) {
-      final all = [..._basicColors, ..._moreColors];
-      final ids = _colorPrefs.entries.where((e) => e.value == level).map((e) => e.key).toSet();
-      return all.where((c) => ids.contains(c.$1)).map((c) => (c.$1, c.$2)).toList();
-    }
-
-    Widget tag(String text, Color bg) => Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
-          child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 12)),
-        );
+        .map((id) => (_allStyles.firstWhere((s) => s.id == id, orElse: () => StyleOption(id: id, label: id)).label, _styleWeights[id] ?? 0))
+        .toList()..sort((a, b) => b.$2.compareTo(a.$2));
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 基本欄位
+        Text('REVIEW', style: TextStyle(color: colors.primary, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        const SizedBox(height: 8),
+        const Text('確認您的設定', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+        
+        const SizedBox(height: 32),
+        _sectionHeader('SUMMARY', colors),
+        
+        // Basic Info Summary
         Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
-          child: LayoutBuilder(builder: (_, c) {
-            final twoCols = c.maxWidth >= 520;
-            return GridView(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: twoCols ? 2 : 1,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 12,
-                childAspectRatio: 6,
-              ),
-              children: [
-                _kv('身高', '$_height cm'),
-                _kv('體重', '$_weight kg'),
-                _kv('版型偏好', _fitPreference == 'slim' ? '修身' : _fitPreference == 'regular' ? '標準' : '寬鬆'),
-                _kv('通勤方式', {
-                  'walk': '步行',
-                  'bike': '腳踏車',
-                  'motorcycle': '機車',
-                  'car': '汽車',
-                  'public': '大眾運輸'
-                }[_commuteMethod] ?? _commuteMethod),
-              ],
-            );
-          }),
-        ),
-        const SizedBox(height: 12),
-
-        // 風格權重
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white10),
+          ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('風格權重', style: tt.titleMedium),
-              const SizedBox(height: 8),
-              if (styles.isEmpty)
-                Text('未設定風格權重', style: tt.bodySmall?.copyWith(color: Colors.grey))
-              else
-                ...styles.map((e) => Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [Text(e.$1), Text('${e.$2}%')],
-                    )),
+              _summaryRow('身高 / 體重', '$_height cm / $_weight kg'),
+              const Divider(color: Colors.white10, height: 24),
+              _summaryRow('版型 / 通勤', '${_fitPreference.toUpperCase()} / ${_commuteMethod.toUpperCase()}'),
             ],
           ),
         ),
-        const SizedBox(height: 12),
 
-        // 顏色偏好摘要
-        if (_colorPrefs.isNotEmpty)
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('顏色偏好', style: tt.titleMedium),
-                const SizedBox(height: 8),
-                if (_byLevel(ColorPreferenceLevel.like).isNotEmpty) ...[
-                  Row(children: const [Icon(Icons.favorite, color: Colors.pink, size: 16), SizedBox(width: 6), Text('喜歡')]),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _byLevel(ColorPreferenceLevel.like).map((e) => tag(e.$2, Colors.pink)).toList(),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-                if (_byLevel(ColorPreferenceLevel.avoid).isNotEmpty) ...[
-                  Row(children: const [Icon(Icons.block, color: Colors.orange, size: 16), SizedBox(width: 6), Text('少穿')]),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _byLevel(ColorPreferenceLevel.avoid).map((e) => tag(e.$2, Colors.orange)).toList(),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-                if (_showNever && _byLevel(ColorPreferenceLevel.never).isNotEmpty) ...[
-                  Row(children: const [Icon(Icons.shield, color: Colors.red, size: 16), SizedBox(width: 6), Text('絕不建議')]),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _byLevel(ColorPreferenceLevel.never).map((e) => tag(e.$2, Colors.red)).toList(),
-                  ),
-                ],
-              ],
-            ),
+        const SizedBox(height: 16),
+        // Style Weights
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white10),
           ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('風格權重分佈', style: TextStyle(color: Colors.white70, fontSize: 12)),
+              const SizedBox(height: 12),
+              ...styles.map((e) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(flex: 3, child: Text(e.$1, style: const TextStyle(color: Colors.white))),
+                    Expanded(
+                      flex: 7,
+                      child: Stack(
+                        children: [
+                          Container(height: 6, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(3))),
+                          Container(
+                            height: 6, 
+                            width: (e.$2 * 2.0).clamp(0, 200), // simple visualization
+                            decoration: BoxDecoration(color: colors.primary, borderRadius: BorderRadius.circular(3)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text('${e.$2}%', style: TextStyle(color: colors.text, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              )),
+            ],
+          ),
+        ),
       ],
     );
   }
 
-  // -------------------- Footer Buttons --------------------
-  Widget _buildFooterButtons() {
+  // ==========================================
+  // Helper Widgets
+  // ==========================================
+
+  Widget _sectionHeader(String title, ThemeColors colors) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(title, style: TextStyle(color: colors.secondary.withOpacity(0.7), fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1)),
+    );
+  }
+
+  Widget _selectableBtn(String label, bool selected, VoidCallback onTap, ThemeColors colors) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? colors.primary.withOpacity(0.2) : Colors.white.withOpacity(0.05),
+          border: Border.all(color: selected ? colors.primary : Colors.white10),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: selected ? [BoxShadow(color: colors.glow.withOpacity(0.5), blurRadius: 8)] : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? colors.primary : Colors.white70,
+            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _glassInput(String label, int value, ValueChanged<int> onChanged, ThemeColors colors) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        const SizedBox(height: 6),
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white10),
+            ),
+            alignment: Alignment.center,
+            child: TextFormField(
+              initialValue: value.toString(),
+              keyboardType: TextInputType.number,
+              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(border: InputBorder.none),
+              onChanged: (v) => onChanged(int.tryParse(v) ?? value),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _colorSelector((String id, String label, Color color) item, ThemeColors colors) {
+    final pref = _colorPrefs[item.$1] ?? ColorPreferenceLevel.neutral;
+    
+    // Cycle next preference
+    void cycle() {
+      final next = switch (pref) {
+        ColorPreferenceLevel.neutral => ColorPreferenceLevel.like,
+        ColorPreferenceLevel.like => ColorPreferenceLevel.avoid,
+        ColorPreferenceLevel.avoid => _showNever ? ColorPreferenceLevel.never : ColorPreferenceLevel.neutral,
+        ColorPreferenceLevel.never => ColorPreferenceLevel.neutral,
+      };
+      setState(() => _colorPrefs[item.$1] = next);
+    }
+
+    IconData? icon;
+    Color iconColor = Colors.white;
+    if (pref == ColorPreferenceLevel.like) { icon = Icons.favorite; iconColor = Colors.pink; }
+    if (pref == ColorPreferenceLevel.avoid) { icon = Icons.block; iconColor = Colors.orange; }
+    if (pref == ColorPreferenceLevel.never) { icon = Icons.shield; iconColor = Colors.red; }
+
+    return GestureDetector(
+      onTap: cycle,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.black26,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: pref == ColorPreferenceLevel.neutral ? Colors.white10 : iconColor.withOpacity(0.5)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 24, height: 24,
+              decoration: BoxDecoration(
+                color: item.$3,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white24),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(item.$2, style: const TextStyle(color: Colors.white70, fontSize: 12))),
+            if (icon != null) Icon(icon, size: 16, color: iconColor),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _legendItem(IconData icon, Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(color: color, fontSize: 12)),
+      ],
+    );
+  }
+
+  Widget _summaryRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white54)),
+        Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  Widget _buildFooterButtons(ThemeColors colors) {
     return Row(
       children: [
         if (_step > 1)
-          OutlinedButton(
-            onPressed: () => setState(() => _step -= 1),
-            child: const Text('上一步'),
+          TextButton(
+            onPressed: () => setState(() => _step--),
+            child: Text('BACK', style: TextStyle(color: colors.text.withOpacity(0.5))),
           ),
         const Spacer(),
-        FilledButton(
-          onPressed: () {
+        GestureDetector(
+          onTap: () {
             if (_step < 3) {
-              setState(() => _step += 1);
+              setState(() => _step++);
             } else {
               _finish();
             }
           },
-          child: Text(_step == 3 ? '完成設定' : '下一步'),
-        ),
-      ],
-    );
-  }
-
-  // -------------------- Dialog: 風格選擇 --------------------
-  Widget _styleDialog(BuildContext context) {
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(children: const [Icon(Icons.style, size: 20), SizedBox(width: 8), Text('選擇您喜歡的風格')]),
-              const SizedBox(height: 12),
-              // 新增自訂風格
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _newStyleCtrl,
-                      decoration: const InputDecoration(
-                        hintText: '輸入風格名稱（如：嘻哈、龐克）',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      onSubmitted: (_) => _addCustomStyle(),
-                      maxLength: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: _addCustomStyle,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('新增'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              // 標籤選擇
-              SingleChildScrollView(
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _allStyles.map((s) {
-                    final selected = _tempSelectedStyleIds.contains(s.id);
-                    return ChoiceChip(
-                      selected: selected,
-                      label: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text(s.label),
-                        if (s.isCustom) const SizedBox(width: 4),
-                        if (s.isCustom) const Text('✨', style: TextStyle(fontSize: 12)),
-                      ]),
-                      onSelected: (_) => _toggleTempStyle(s.id),
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Text('已選擇 ${_tempSelectedStyleIds.length} 個風格', style: const TextStyle(color: Colors.grey)),
-                  const Spacer(),
-                  OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: () {
-                      _confirmStyleSelection();
-                      Navigator.pop(context);
-                    },
-                    child: const Text('確認選擇'),
-                  ),
-                ],
-              ),
-            ],
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: colors.accentGradient),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: colors.glow, blurRadius: 12, offset: const Offset(0, 4))],
+            ),
+            child: Text(
+              _step == 3 ? 'COMPLETE' : 'NEXT',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1),
+            ),
           ),
         ),
-      ),
-    );
-  }
-
-  // -------------------- 小元件 --------------------
-  Widget _radio(String label, String value, {required String group, required ValueChanged<String> onChanged}) {
-    return InkWell(
-      onTap: () => onChanged(value),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Radio<String>(value: value, groupValue: group, onChanged: (v) => v != null ? onChanged(v) : null),
-          Text(label),
-        ],
-      ),
-    );
-  }
-
-  Widget _numberField(String label, int value, ValueChanged<int> onChanged) {
-    final ctrl = TextEditingController(text: value.toString());
-    return TextField(
-      controller: ctrl,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), isDense: true),
-      onChanged: (s) {
-        final v = int.tryParse(s);
-        if (v != null) onChanged(v);
-      },
-    );
-  }
-
-  Widget _kv(String k, String v) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [Text(k), Text(v, style: const TextStyle(fontWeight: FontWeight.w600))],
-    );
-  }
-
-  Widget _legendDot({required Color color, required String label}) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const SizedBox(width: 6),
-        Text(label, style: const TextStyle(fontSize: 12)),
       ],
     );
   }
-}
 
-/// 共用：黑漸層 Logo 方塊（灰→黑漸層、22 圓角、陰影、置中白色「S」）
-class BlackLogoBox extends StatelessWidget {
-  final double size;
-  final double radius;
-  final String letter;
-  const BlackLogoBox({
-    super.key,
-    this.size = 80,
-    this.radius = 22,
-    this.letter = 'S',
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF9CA3AF), Color(0xFF111827)], // gray-400 → gray-900
-        ),
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: const [
-          BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 8)),
-        ],
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        letter,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 36,
-          fontWeight: FontWeight.w700,
-          letterSpacing: .5,
-        ),
+  void _openStyleDialog(BuildContext context, ThemeColors colors) {
+    _tempSelectedStyleIds = [..._selectedStyleIds];
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            child: GlassContainer(
+              colors: colors,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('選擇喜歡的風格', style: TextStyle(color: colors.text, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _newStyleCtrl,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: '新增自訂風格...',
+                        hintStyle: const TextStyle(color: Colors.white30),
+                        enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: colors.primary)),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.add, color: Colors.white),
+                          onPressed: () {
+                            if (_newStyleCtrl.text.isNotEmpty) {
+                              setState(() {
+                                final newId = 'custom_${DateTime.now().millisecondsSinceEpoch}';
+                                _customStyles.add(StyleOption(id: newId, label: _newStyleCtrl.text, isCustom: true));
+                                _tempSelectedStyleIds.add(newId);
+                                _newStyleCtrl.clear();
+                              });
+                              setDialogState(() {});
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _allStyles.map((s) {
+                            final selected = _tempSelectedStyleIds.contains(s.id);
+                            return FilterChip(
+                              label: Text(s.label),
+                              selected: selected,
+                              onSelected: (_) {
+                                setDialogState(() {
+                                  selected ? _tempSelectedStyleIds.remove(s.id) : _tempSelectedStyleIds.add(s.id);
+                                });
+                              },
+                              backgroundColor: Colors.black26,
+                              selectedColor: colors.primary.withOpacity(0.3),
+                              checkmarkColor: colors.primary,
+                              labelStyle: TextStyle(color: selected ? colors.primary : Colors.white70),
+                              side: BorderSide.none,
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('取消', style: TextStyle(color: Colors.white54)),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(backgroundColor: colors.primary, foregroundColor: Colors.black),
+                          onPressed: () {
+                            setState(() {
+                              _selectedStyleIds = [..._tempSelectedStyleIds];
+                              _styleWeights = _equalizeWeights(_selectedStyleIds);
+                            });
+                            Navigator.pop(context);
+                          },
+                          child: const Text('確認'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
