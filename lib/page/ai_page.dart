@@ -2,9 +2,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/theme/s_flow_design.dart'; // ✅ 引入設計系統
 
-/// ---------------------------------------------------------------------------
-/// Mock Data + Models (保持不變)
-/// ---------------------------------------------------------------------------
 class ClothingItem {
   final String id;
   final String subCategory;
@@ -53,11 +50,8 @@ const mockClothingItems = <ClothingItem>[
   ClothingItem(id: 'c6', subCategory: '樂福鞋', brand: 'Dr. Martens'),
 ];
 
-/// ---------------------------------------------------------------------------
-/// AI Page (S-FLOW RWD)
-/// ---------------------------------------------------------------------------
 class AIPage extends StatefulWidget {
-  // ✅ 修正 1: 接收全域顏色
+  // ✅ 接收全域顏色
   final SFlowColors? currentColors;
 
   const AIPage({
@@ -77,7 +71,7 @@ class _AIPageState extends State<AIPage> {
 
   late List<Outfit> results;
 
-  // ✅ 修正 2: 改為 Getter，動態使用傳入顏色，預設為紫色 (深色背景)
+  // ✅ 改用 Getter 動態取得顏色
   SFlowColors get colors => widget.currentColors ?? SFlowThemes.purple;
 
   @override
@@ -99,7 +93,7 @@ class _AIPageState extends State<AIPage> {
     ];
   }
 
-  // ✅ 修正 3: 監聽父層顏色變化
+  // ✅ 監聽主題變化
   @override
   void didUpdateWidget(AIPage oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -108,7 +102,6 @@ class _AIPageState extends State<AIPage> {
     }
   }
 
-  // ---------------- RWD helpers ----------------
   double _containerMaxWidth(double w) {
     if (w >= 1600) return 1200;
     if (w >= 1200) return 1100;
@@ -123,7 +116,6 @@ class _AIPageState extends State<AIPage> {
     return 1;
   }
 
-  // ---------------- Actions ----------------
   void _snack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -140,10 +132,8 @@ class _AIPageState extends State<AIPage> {
 
   void _handleGenerate() {
     _snack('AI 正在為你生成穿搭建議...');
-    // TODO: 接你的 AI API，塞回 results
   }
 
-  // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
@@ -166,7 +156,6 @@ class _AIPageState extends State<AIPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 條件設定卡
                 _GlassConditionsCard(
                   temperature: temperature,
                   isRaining: isRaining,
@@ -205,7 +194,6 @@ class _AIPageState extends State<AIPage> {
                 ),
                 const SizedBox(height: 12),
 
-                // 推薦卡片
                 LayoutBuilder(
                   builder: (context, c) {
                     final cols = _gridCols(c.maxWidth);
@@ -231,7 +219,6 @@ class _AIPageState extends State<AIPage> {
 
                 const SizedBox(height: 16),
                 
-                // 理由說明
                 _GlassReasonCard(
                   temperature: temperature,
                   isRaining: isRaining,
@@ -246,7 +233,6 @@ class _AIPageState extends State<AIPage> {
   }
 }
 
-/// 玻璃條件設定 Card
 class _GlassConditionsCard extends StatelessWidget {
   const _GlassConditionsCard({
     required this.temperature,
@@ -297,7 +283,6 @@ class _GlassConditionsCard extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          // 場合
           Text('場合', style: TextStyle(color: colors.textDim, fontSize: 14, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Wrap(
@@ -328,7 +313,6 @@ class _GlassConditionsCard extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // 溫度
           Row(
             children: [
               Icon(Icons.thermostat, size: 18, color: colors.secondary),
@@ -361,7 +345,6 @@ class _GlassConditionsCard extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          // 開關
           _GlassSwitch(
             value: isRaining, 
             onChanged: onToggleRain, 
@@ -442,7 +425,6 @@ class _GlassSwitch extends StatelessWidget {
   }
 }
 
-/// 玻璃推薦卡片
 class _GlassOutfitRecommendCard extends StatelessWidget {
   const _GlassOutfitRecommendCard({
     required this.outfit, 
@@ -552,7 +534,6 @@ class _ImagePlaceholder extends StatelessWidget {
   }
 }
 
-/// 玻璃理由說明 Card
 class _GlassReasonCard extends StatelessWidget {
   const _GlassReasonCard({required this.temperature, required this.isRaining, required this.colors});
   final double temperature;

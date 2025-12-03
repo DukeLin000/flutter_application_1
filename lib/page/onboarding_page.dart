@@ -1,11 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../models/user_profile.dart';
-import '../theme/s_flow_design.dart'; // ✅ 1. 引入全域設計系統
-
-// ==========================================
-// Onboarding Page Logic
-// ==========================================
+import '../theme/s_flow_design.dart'; // ✅ 引入全域設計
 
 enum ColorPreferenceLevel { like, neutral, avoid, never }
 
@@ -25,7 +21,7 @@ class OnboardingPage extends StatefulWidget {
 }
 
 class _OnboardingPageState extends State<OnboardingPage> {
-  bool _isPurple = true; // Theme state
+  bool _isPurple = true; // Local state for onboarding
   int _step = 1;
 
   // Basic Data
@@ -52,11 +48,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
   late List<String> _selectedStyleIds = [..._defaultSelected];
   Map<String, int> _styleWeights = {};
 
-  // Dialog temp
   final TextEditingController _newStyleCtrl = TextEditingController();
   late List<String> _tempSelectedStyleIds = [..._selectedStyleIds];
 
-  // Colors
   bool _showNever = false;
   final Map<String, ColorPreferenceLevel> _colorPrefs = {};
 
@@ -78,7 +72,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   ];
   bool _expandMoreColors = false;
 
-  // ✅ 2. 使用全域 SFlowThemes
+  // ✅ 使用全域主題定義
   SFlowColors get _currentTheme => _isPurple ? SFlowThemes.purple : SFlowThemes.gold;
 
   @override
@@ -118,14 +112,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
       styleWeights: _styleWeights,
       gender: _gender,
     );
-    // 注意：目前的 UserProfile 模型不包含 themePreference。
-    // 如果您希望將這裡選擇的主題(金/紫)應用到 App，您可能需要更新 onComplete 回調或 UserProfile 模型。
     widget.onComplete(profile);
   }
-
-  // ==========================================
-  // UI Construction
-  // ==========================================
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +125,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
       backgroundColor: Colors.transparent,
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 1000),
-        // ✅ 3. 使用 SFlowBackground 邏輯或漸層
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -156,7 +143,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Column(
                       children: [
-                        // Header with Theme Toggle
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -172,8 +158,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                         ),
                         const SizedBox(height: 24),
                         
-                        // Main Glass Card
-                        // ✅ 4. 使用 S-FLOW 的 GlassContainer
+                        // ✅ 使用 S-FLOW GlassContainer
                         GlassContainer(
                           colors: colors,
                           child: AnimatedSwitcher(
@@ -272,7 +257,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
-  // -------------------- Step 1: Basic Info --------------------
   Widget _stepBasic(SFlowColors colors) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -342,7 +326,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
-  // -------------------- Step 2: Style & Colors --------------------
   Widget _stepStyleAndColors(SFlowColors colors) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -396,7 +379,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
           ),
           child: Column(
             children: [
-              // Legend
               Wrap(
                 spacing: 16,
                 children: [
@@ -417,7 +399,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
               Divider(color: colors.glassBorder),
               const SizedBox(height: 8),
               
-              // Color Grid
               GridView.count(
                 crossAxisCount: MediaQuery.of(context).size.width > 600 ? 4 : 2,
                 mainAxisSpacing: 12,
@@ -445,7 +426,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
-  // -------------------- Step 3: Review --------------------
   Widget _stepReview(SFlowColors colors) {
     final styles = _selectedStyleIds
         .map((id) => (_allStyles.firstWhere((s) => s.id == id, orElse: () => StyleOption(id: id, label: id)).label, _styleWeights[id] ?? 0))
@@ -461,7 +441,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
         const SizedBox(height: 32),
         _sectionHeader('SUMMARY', colors),
         
-        // Basic Info Summary
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -479,7 +458,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
         ),
 
         const SizedBox(height: 16),
-        // Style Weights
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -521,10 +499,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
       ],
     );
   }
-
-  // ==========================================
-  // Helper Widgets
-  // ==========================================
 
   Widget _sectionHeader(String title, SFlowColors colors) {
     return Padding(
@@ -573,7 +547,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
             child: TextFormField(
               initialValue: value.toString(),
               keyboardType: TextInputType.number,
-              // ✅ 修正：使用 theme text color，避免在淺色背景下看不見
               style: TextStyle(color: colors.text, fontSize: 18, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
               decoration: const InputDecoration(border: InputBorder.none),
@@ -609,7 +582,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          color: Colors.black26, // Color chip background usually stays dark
+          color: Colors.black26, 
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: pref == ColorPreferenceLevel.neutral ? colors.glassBorder : iconColor.withOpacity(0.5)),
         ),

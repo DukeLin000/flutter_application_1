@@ -2,12 +2,9 @@ import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/api_client.dart';
-import 'package:flutter_application_1/theme/s_flow_design.dart'; // ✅ 引入設計系統
+import 'package:flutter_application_1/theme/s_flow_design.dart';
 import 'package:flutter_application_1/widgets/ui/add_item_dialog.dart' as adddlg;
 
-/// ---------------------------------------------------------------------------
-/// Model (保持不變)
-/// ---------------------------------------------------------------------------
 class ClothingItem {
   final String id;
   final String category;    
@@ -37,11 +34,8 @@ class ClothingItem {
   }
 }
 
-/// ---------------------------------------------------------------------------
-/// WardrobePage (S-FLOW RWD)
-/// ---------------------------------------------------------------------------
 class WardrobePage extends StatefulWidget {
-  // ✅ 修正 1: 接收全域主題顏色
+  // ✅ 接收全域顏色
   final SFlowColors? currentColors;
 
   const WardrobePage({
@@ -54,15 +48,14 @@ class WardrobePage extends StatefulWidget {
 }
 
 class _WardrobePageState extends State<WardrobePage> {
-  String viewMode = 'grid'; // grid | list
+  String viewMode = 'grid'; 
   List<ClothingItem> items = []; 
   String selectedCategory = 'all';
   bool _isLoading = false;
 
-  // ✅ 修正 2: 改為 Getter，動態取得顏色 (預設為 Purple 以配合深色背景)
+  // ✅ 改用 Getter 動態獲取顏色
   SFlowColors get colors => widget.currentColors ?? SFlowThemes.purple;
   
-  // 顏色映射表 (UI中文 -> 後端英文)
   final Map<String, String> _colorMap = {
     '黑色': 'BLACK', '白色': 'WHITE', '灰色': 'GRAY', '米色': 'BEIGE',
     '藍色': 'BLUE', '深藍': 'NAVY', '紅色': 'RED', '粉色': 'PINK',
@@ -76,7 +69,7 @@ class _WardrobePageState extends State<WardrobePage> {
     _fetchItems();
   }
 
-  // ✅ 修正 3: 確保當父層切換主題時，這裡也會更新
+  // ✅ 監聽主題變化
   @override
   void didUpdateWidget(WardrobePage oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -104,7 +97,6 @@ class _WardrobePageState extends State<WardrobePage> {
 
   Future<void> _addItem() async {
     // 使用深色主題 Dialog
-    // 這裡我們強制傳入一個深色 Theme 的 context，確保 Dialog 不會變白底
     await showDialog(
       context: context,
       builder: (ctx) => Theme(
@@ -112,20 +104,22 @@ class _WardrobePageState extends State<WardrobePage> {
           primaryColor: colors.primary,
           colorScheme: ColorScheme.dark(primary: colors.primary),
         ),
-        // 注意：這裡需要確認 adddlg.showAddItemDialog 是否支援由外部 builder 呼叫
-        // 如果它是一個封裝好的 function，你可能需要修改 add_item_dialog.dart
-        // 假設 adddlg.showAddItemDialog 是一個 Widget 或者可以接受 context 的 function
-        // 這裡暫時示範如何確保環境是深色的
         child: Builder(
           builder: (innerContext) {
-             // 這裡呼叫原本的邏輯，但建議檢查 add_item_dialog.dart 是否正確使用了 Theme.of(context)
-             return const SizedBox(); // 佔位，實際應呼叫你的 Dialog Widget
+             // 呼叫你的對話框
+             // 這裡需要 adddlg.showAddItemDialog 支援回傳 Widget 或直接嵌入
+             // 由於 adddlg.showAddItemDialog 是 function，我們直接調用它
+             // 但要確保它的 context 是 innerContext (帶有 theme)
+             // 不過 showDialog 是全域的，這裡的 theme data 傳遞有點複雜
+             // 最簡單是直接呼叫，依賴 main.dart 的 Theme
+             return const SizedBox(); 
           }
         ),
       ),
     );
-
-    // ✅ 簡單版：直接呼叫，但確保 main.dart 的 ThemeMode 是 dark
+    
+    // 實際上，只要 main.dart 是 dark theme，showAddItemDialog 應該就會是深色的
+    // 如果要跟隨 S-FLOW 顏色，需要修改 add_item_dialog 內部
     final item = await adddlg.showAddItemDialog(context);
 
     if (item == null) return;
@@ -140,7 +134,6 @@ class _WardrobePageState extends State<WardrobePage> {
         finalImageUrl = uploadRes['url'];
       }
 
-      // 顏色轉換
       String? backendColor;
       if (item.color.isNotEmpty) {
         final uiColor = item.color.first;
@@ -190,12 +183,10 @@ class _WardrobePageState extends State<WardrobePage> {
     );
   }
 
-  // ------------------ RWD helpers ------------------
   double _containerMaxWidth(double w) => w >= 1600 ? 1200 : (w >= 1200 ? 1100 : (w >= 900 ? 900 : (w >= 600 ? 760 : w - 24)));
   int _gridCols(double w) => w >= 1200 ? 4 : (w >= 900 ? 3 : 2);
   double _tileAspectRatio(double w) => 0.75;
 
-  // ------------------ Derived ------------------
   List<Map<String, dynamic>> get _categories {
     int countCat(String id) => items.where((i) => i.category == id).length;
     return [
@@ -211,15 +202,13 @@ class _WardrobePageState extends State<WardrobePage> {
   List<ClothingItem> get _filteredItems =>
       selectedCategory == 'all' ? items : items.where((i) => i.category == selectedCategory).toList();
 
-  // ------------------ UI ------------------
-
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
     final isLg = w >= 1200;
 
     return Scaffold(
-      backgroundColor: Colors.transparent, // ★ S-FLOW: 透明背景
+      backgroundColor: Colors.transparent, 
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -237,12 +226,10 @@ class _WardrobePageState extends State<WardrobePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 工具列 (Header)
               Padding(
                 padding: EdgeInsets.fromLTRB(isLg ? 24 : 16, 16, isLg ? 24 : 16, 0),
                 child: Row(
                   children: [
-                    // View Mode Toggle (Glass Style)
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.1),
@@ -265,11 +252,8 @@ class _WardrobePageState extends State<WardrobePage> {
                       ),
                     ),
                     const Spacer(),
-                    // Filter Btn (Glass)
                     OutlinedButton.icon(
-                      onPressed: () {
-                        // _openFilter (暫時略過)
-                      },
+                      onPressed: () {},
                       style: OutlinedButton.styleFrom(
                         side: BorderSide(color: colors.glassBorder), 
                         foregroundColor: colors.text
@@ -278,7 +262,6 @@ class _WardrobePageState extends State<WardrobePage> {
                       label: const Text('篩選'),
                     ),
                     const SizedBox(width: 8),
-                    // Add Btn (Solid)
                     FilledButton.icon(
                       onPressed: _addItem,
                       icon: const Icon(Icons.add, size: 18),
@@ -290,7 +273,6 @@ class _WardrobePageState extends State<WardrobePage> {
               ),
               const SizedBox(height: 16),
 
-              // 分類標籤 (Glass Chips)
               SizedBox(
                 height: 42,
                 child: ListView.separated(
@@ -326,7 +308,6 @@ class _WardrobePageState extends State<WardrobePage> {
               ),
               const SizedBox(height: 16),
 
-              // 內容區 (Glass Cards)
               Expanded(
                 child: _isLoading
                     ? Center(child: CircularProgressIndicator(color: colors.primary))
@@ -375,8 +356,6 @@ class _WardrobePageState extends State<WardrobePage> {
     );
   }
 }
-
-/// ------------------ S-FLOW Glass Cards ------------------
 
 class _GlassGridCard extends StatelessWidget {
   final ClothingItem item;
